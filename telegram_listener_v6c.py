@@ -776,8 +776,17 @@ class TradeManager:
             if pos.magic == MAGIC_NUMBER:
                 ticket = pos.ticket
                 if self.bridge.close_position(ticket, comment="DAILY-LIMIT-CLOSE"):
-                    total_pnl += pos.profit
-                    log.info(f"  ✓ Fermeture #{ticket} (P&L={pos.profit:.2f})")
+                    # Récupérer le P&L réel depuis l'historique après fermeture
+                    deals = mt5.history_deals_get(symbol=pos.symbol, from_time=get_trading_day_start())
+                    if deals:
+                        for deal in reversed(deals):
+                            if deal.position_id == ticket and deal.entry == mt5.DEAL_ENTRY_OUT:
+                                total_pnl += deal.profit
+                                log.info(f"  ✓ Fermeture #{ticket} (P&L={deal.profit:.2f})")
+                                break
+                    else:
+                        total_pnl += pos.profit
+                        log.info(f"  ✓ Fermeture #{ticket} (P&L={pos.profit:.2f})")
         log.info(f"📌 Fermeture de toutes les positions")
         return total_pnl
 
@@ -796,8 +805,7 @@ class TradeManager:
         log.info(f"   Limite: {DAILY_PROFIT_LIMIT}$")
         self._cancel_all_pending_orders()
         total_pnl = self._close_all_positions()
-        if total_pnl != 0:
-            self._update_daily_pnl(total_pnl)
+        self._update_daily_pnl(total_pnl)
         self._clear_all_entries()
         total = self._daily_pnl + self._get_floating_pnl()
         send_alert_sync(
@@ -867,7 +875,7 @@ class TradeManager:
                 continue
             # Filtrer : uniquement les positions MARKET
             role = t.get("role", "")
-            if role not in ("market_tp3", "market_cas2", "market_single"):
+            if role not in ("market_cas1", "market_cas2", "market_single", "quick_market", "limit_single", "quick_limit_filled"):
                 continue
             pos = self._get_pos(t["ticket"])
             if pos and pos.profit >= PNL_TRIGGER_USD:
@@ -1020,7 +1028,7 @@ class TradeManager:
         deals = mt5.history_deals_get(since, datetime.now(timezone.utc))
         if deals:
             for deal in reversed(deals):
-                if deal.symbol == symbol and (deal.position_id == ticket or deal.order == ticket):
+                if deal.symbol == symbol and deal.position_id == ticket:
                     if deal.entry == mt5.DEAL_ENTRY_OUT:
                         if deal.reason == mt5.DEAL_REASON_TP:
                             return "TP"
@@ -1480,7 +1488,7 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
         market_entry_price = current
         if t:
             tickets.append({
-                "ticket": t, "lot": lot_market, "role": "market_tp3",
+                "ticket": t, "lot": lot_market, "role": "market_cas1",
                 "entry_price": market_entry_price, "tp_index": tp_trigger_idx, "tp_target": tp3,
                 "tp3": tp3, "tp_final": tp_final, "sl_step": 0, "trail_active": False,
                 "be_active": False, "be_sl": 0,
@@ -1498,7 +1506,7 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
         o = bridge.place_limit_order(signal, lot_limit, limit_price, tp_final, expiry, comment=mt5_comment)
         if o:
             orders.append({
-                "order": o, "lot": lot_limit, "price": limit_price, "role": "limit_catch",
+                "order": o, "lot": lot_limit, "price": limit_price, "role": "limit_cas1",
                 "tp_index": len(all_tps) - 1, "tp_target": tp_final, "tp3": tp3,
                 "tp_final": tp_final, "sl_step": 0, "trail_active": False,
                 "_market_entry_price": market_entry_price,
@@ -1714,16 +1722,22 @@ def execute_quick_alert(signal: dict, bridge: MT5Bridge, manager: TradeManager,
                 log.warning(f"QUICK ALERT existante mais ordre/position #{existing_ticket} introuvable → nouvelle alerte")
 
     if action == "SELL":
-        in_zone = entry_price <= current <= sl
+        in_market_zone = entry_price <= current <= sl
+        in_limit_zone = entry_price - 3 <= current < entry_price
     else:
-        in_zone = sl <= current <= entry_price
+        in_market_zone = sl <= current <= entry_price
+        in_limit_zone = entry_price < current <= entry_price + 3
+
+    if not in_market_zone and not in_limit_zone:
+        log.info(f"QUICK ALERT IGNORÉ — prix {current} hors zones (MARKET: {sl}-{entry_price}, LIMIT: {entry_price}±3)")
+        return
 
     orders = []
     tickets = []
     order_ticket = None
     is_limit_order = False
 
-    if in_zone:
+    if in_market_zone:
         log.info(f"QUICK ALERT MARKET {action} {symbol} @{current} SL={sl}, TP={default_tp}, lot={LOT_UNIQUE_TRADE}")
         try:
             t = bridge.place_market_order(signal, LOT_UNIQUE_TRADE, tp=default_tp, comment=f"CH{ch_num}-AL")
@@ -1813,18 +1827,16 @@ def merge_quick_alert(qa: dict, key: str, full_signal: dict,
         if not pos and not order:
             since = datetime.now(timezone.utc) - timedelta(minutes=30)
             deals = mt5.history_deals_get(since, datetime.now(timezone.utc))
-            sl_hit = False
+            closed = False
             if deals:
                 for deal in reversed(deals):
-                    if deal.position_id == qa_ticket and deal.entry == mt5.DEAL_ENTRY_OUT:
-                        if deal.reason == mt5.DEAL_REASON_SL:
-                            sl_hit = True
+                    if deal.order == qa_ticket and deal.entry == mt5.DEAL_ENTRY_OUT:
+                        closed = True
                         break
-            if sl_hit:
-                log.info(f"MERGE: Quick alert #{qa_ticket} SL touché → signal complet ignoré")
+            if closed:
+                log.info(f"MERGE: Quick alert #{qa_ticket} fermé (SL/TP) → signal complet ignoré")
             else:
-                log.info(f"MERGE: Quick alert #{qa_ticket} expiré/annulé → exécuter signal complet")
-                execute_signal(full_signal, bridge, manager, tracker)
+                log.info(f"MERGE: Quick alert #{qa_ticket} expiré/annulé → signal complet ignoré")
             if key in quick_alerts and qa in quick_alerts[key]:
                 quick_alerts[key].remove(qa)
                 if not quick_alerts[key]:
@@ -1835,25 +1847,16 @@ def merge_quick_alert(qa: dict, key: str, full_signal: dict,
         if not pos:
             since = datetime.now(timezone.utc) - timedelta(minutes=30)
             deals = mt5.history_deals_get(since, datetime.now(timezone.utc))
-            sl_hit = False
-            tp_hit = False
+            closed = False
             if deals:
                 for deal in reversed(deals):
-                    if (deal.symbol == full_signal["symbol"] and
-                        (deal.position_id == qa_ticket or deal.order == qa_ticket)):
-                        if deal.entry == mt5.DEAL_ENTRY_OUT:
-                            if deal.reason == mt5.DEAL_REASON_SL:
-                                sl_hit = True
-                            elif deal.reason == mt5.DEAL_REASON_TP:
-                                tp_hit = True
-                            break
-            if sl_hit:
-                log.info(f"MERGE: Quick alert #{qa_ticket} SL touché → signal complet ignoré")
-            elif tp_hit:
-                log.info(f"MERGE: Quick alert #{qa_ticket} TP touché → signal complet ignoré")
+                    if deal.position_id == qa_ticket and deal.entry == mt5.DEAL_ENTRY_OUT:
+                        closed = True
+                        break
+            if closed:
+                log.info(f"MERGE: Quick alert #{qa_ticket} fermé (SL/TP) → signal complet ignoré")
             else:
-                log.info(f"MERGE: Quick alert #{qa_ticket} fermé (autre raison) → exécuter signal complet")
-                execute_signal(full_signal, bridge, manager, tracker)
+                log.info(f"MERGE: Quick alert #{qa_ticket} introuvable → signal complet ignoré")
             if key in quick_alerts and qa in quick_alerts[key]:
                 quick_alerts[key].remove(qa)
                 if not quick_alerts[key]:

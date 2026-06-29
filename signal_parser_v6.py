@@ -264,10 +264,10 @@ def _extract_symbol(text: str) -> Optional[str]:
     return None
 
 def _extract_action(normalized_text: str) -> Optional[str]:
-    m = re.search(r'\b(BUY|SELL|LONG|SHORT|PURCHASE|BUYING|SELLING|ENTRY|SEL)\b', normalized_text)
+    m = re.search(r'\b(BUY|SELL|LONG|SHORT|PURCHASE|BUYING|SELLING|SEL)\b', normalized_text)
     if m:
         raw = m.group(1).upper()
-        if raw in ("BUY", "LONG", "PURCHASE", "BUYING", "ENTRY"):
+        if raw in ("BUY", "LONG", "PURCHASE", "BUYING"):
             return "BUY"
         elif raw in ("SELL", "SHORT", "SELLING", "SEL"):
             return "SELL"
@@ -548,10 +548,11 @@ class SignalParser:
         # Génération auto TP si SL présent mais pas de TPs
         if sl is not None and not tps:
             RR_RATIO = float(os.getenv("RR_RATIO_DEFAULT", "1.5"))
+            entry_mid = (zone_low + zone_high) / 2
             if action == "BUY":
-                tp = zone_low + (zone_low - sl) * RR_RATIO
+                tp = entry_mid + (entry_mid - sl) * RR_RATIO
             else:
-                tp = zone_low - (sl - zone_low) * RR_RATIO
+                tp = entry_mid - (sl - entry_mid) * RR_RATIO
             tps = [round(tp, 2)]
             log.info(f"TP généré automatiquement : {tps[0]} (RR={RR_RATIO})")
 
@@ -559,14 +560,21 @@ class SignalParser:
         if not tps and sl is None:
             log.info(f"Quick alert détecté: {action} {symbol} @{zone_low}")
             sl_offset = float(os.getenv("QUICK_ALERT_SL_OFFSET", "10.0"))
-            provisional_sl = (zone_low - sl_offset) if action == "BUY" else (zone_low + sl_offset)
+            RR_RATIO = float(os.getenv("RR_RATIO_DEFAULT", "1.5"))
+            entry_mid = (zone_low + zone_high) / 2
+            if action == "BUY":
+                provisional_sl = entry_mid - sl_offset
+                default_tp = entry_mid + sl_offset * RR_RATIO
+            else:
+                provisional_sl = entry_mid + sl_offset
+                default_tp = entry_mid - sl_offset * RR_RATIO
             return TradeSignal(
                 signal_type="TRADE",
                 direction=action,
                 entry=zone_low,
                 zone_low=zone_low,
                 zone_high=zone_high,
-                tps=[],
+                tps=[round(default_tp, 2)],
                 sl=round(provisional_sl, 2),
                 pair=symbol,
                 raw_text=normalized_text[:200],

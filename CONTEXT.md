@@ -49,6 +49,19 @@
 **Problème :** Les deux fonctions étaient des stubs (`pass`), jamais implémentées depuis v7.
 **Correction :** Implémentation complète depuis `telegram_listener_v7.py`.
 
+### 7. Entry non retirée après TP_FIXED
+**Fichier :** `telegram_listener_v8.py`
+**Problème :** Après TP_FIXED ferme toutes les positions, l'entry restait dans `self.active` jusqu'au prochain cycle. Pendant ce cycle, le code re-entrait dans le bloc `_be_activated` avec `total_pnl = 0`.
+**Correction :** Retrait immédiat de `self.active` après TP_FIXED.
+
+### 8. CAS 2-b — Condition par élimination fragile
+**Fichier :** `telegram_listener_v8.py`
+**Problème :** La condition CAS 2-b utilisait une logique par élimination (vérifier TP2 → CAS 2-a → else CAS 2-b). Peu lisible et sujette aux erreurs.
+**Correction :** Vérification explicite :
+- CAS 2-a : `tp1 < current < zone_low` (SELL) / `zone_high < current < tp1` (BUY)
+- CAS 2-b : `tp2 < current < tp1` (SELL) / `tp1 < current < tp2` (BUY)
+- Else : prix hors zone → ANNULÉ
+
 ---
 
 ## 🟡 Bugs majeurs corrigés
@@ -162,6 +175,44 @@
 
 ---
 
+## 🔍 Conditions CAS 2 (zone)
+
+### CAS 2-a (MARKET + LIMIT)
+Prix entre TP1 et zone :
+```python
+# SELL
+cas2a = tp1 < current < zone_low
+# BUY
+cas2a = zone_high < current < tp1
+```
+
+### CAS 2-b (2 × LIMIT)
+Prix entre TP1 et TP2 :
+```python
+# SELL
+cas2b = tp2 < current < tp1
+# BUY
+cas2b = tp1 < current < tp2
+```
+
+### Else
+Prix hors zone → signal ANNULÉ.
+
+---
+
+## 🔍 Conditions QA-Limit
+
+Fenêtre de 3 points autour de l'entrée :
+```python
+# SELL
+in_limit_zone = entry_price - 3 <= current < entry_price
+# BUY
+in_limit_zone = entry_price < current <= entry_price + 3
+```
+Si le prix est hors de cette fenêtre → QA ignoré.
+
+---
+
 ## 📁 Fichiers modifiés
 
 | Fichier | Modifications |
@@ -176,6 +227,9 @@
 
 | Hash | Description |
 |---|---|
+| `20a3be0` | CAS 2-b condition explicite (prix entre TP1 et TP2) |
+| `8b63088` | Retrait immédiat entry après TP_FIXED |
+| `3eb7ca7` | CONTEXT.md — changelog complet |
 | `b302829` | Implémentation merge_quick_alert + _place_merge_limit |
 | `bdfc602` | Formats de log standardisés |
 | `ab663be` | Log signal au format standard |

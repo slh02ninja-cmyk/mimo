@@ -60,7 +60,17 @@
 **Correction :** Vérification explicite :
 - CAS 2-a : `tp1 < current < zone_low` (SELL) / `zone_high < current < tp1` (BUY)
 - CAS 2-b : `tp2 < current < tp1` (SELL) / `tp1 < current < tp2` (BUY)
-- Else : prix hors zone → ANNULÉ
+- Else : prix hors zone → ANNULÉ\`\`\`
+
+### 9. TP_FIXED — Nettoyage immédiat après fermeture
+**Fichier :** `telegram_listener_v8.py`
+**Problème :** Après TP_FIXED ferme toutes les positions, l'entry restait dans `self.active` jusqu'au prochain cycle. Le code re-entrait dans le bloc `_be_activated` avec `total_pnl = 0`, calculs inutiles.
+**Correction :** Retrait immédiat de `self.active` après TP_FIXED :
+```python
+with self._lock:
+    if entry in self.active:
+        self.active.remove(entry)
+```
 
 ---
 

@@ -732,7 +732,8 @@ class TradeManager:
             "limit_cas2",    # ✅ AJOUTÉ : CAS 2-a a une limit
             "quick_market",
             "quick_limit",
-            "quick_limit_filled"
+            "quick_limit_filled",
+            "merge_limit"       # ✅ AJOUTÉ : fusion QA → limit
         }
 
         self._daily_pnl = self._recover_daily_pnl()
@@ -2047,13 +2048,162 @@ def execute_quick_alert(signal: dict, bridge: MT5Bridge, manager: TradeManager,
 def merge_quick_alert(qa: dict, key: str, full_signal: dict,
                       bridge: MT5Bridge, manager: TradeManager,
                       tracker: PerformanceTracker, quick_alerts: dict):
-    # (identique à la version précédente)
-    pass
+    qa_ticket   = qa["ticket"]
+    qa_is_limit = qa["is_limit"]
+    entry       = qa["entry"]
+    real_sl     = full_signal["sl"]
+    tp_final    = full_signal["tps"][-1] if full_signal["tps"] else 0
 
-def _place_merge_limit(full_signal: dict, bridge: MT5Bridge, entry: dict,
-                       real_sl: float, tp_final: float):
-    # (identique à la version précédente)
-    pass
+    if qa_is_limit:
+        pos   = manager._resolve_order(qa_ticket, full_signal["symbol"])
+        order = mt5.orders_get(ticket=qa_ticket)
+        if not pos and not order:
+            since = datetime.now(timezone.utc) - timedelta(minutes=30)
+            deals = mt5.history_deals_get(since, datetime.now(timezone.utc))
+            sl_hit = False
+            if deals:
+                for deal in reversed(deals):
+                    if deal.position_id == qa_ticket and deal.entry == mt5.DEAL_ENTRY_OUT:
+                        if deal.reason == mt5.DEAL_REASON_SL:
+                            sl_hit = True
+                        break
+            if sl_hit:
+                log.info(f"MERGE: Quick alert #{qa_ticket} SL touché → signal complet ignoré")
+            else:
+                log.info(f"MERGE: Quick alert #{qa_ticket} expiré/annulé → exécuter signal complet")
+                execute_signal(full_signal, bridge, manager, tracker)
+            if key in quick_alerts and qa in quick_alerts[key]:
+                quick_alerts[key].remove(qa)
+                if not quick_alerts[key]:
+                    del quick_alerts[key]
+            return
+    else:
+        pos = mt5.positions_get(ticket=qa_ticket)
+        if not pos:
+            since = datetime.now(timezone.utc) - timedelta(minutes=30)
+            deals = mt5.history_deals_get(since, datetime.now(timezone.utc))
+            sl_hit = tp_hit = False
+            if deals:
+                for deal in reversed(deals):
+                    if deal.symbol == full_signal["symbol"] and (
+                        deal.position_id == qa_ticket or deal.order == qa_ticket
+                    ):
+                        if deal.entry == mt5.DEAL_ENTRY_OUT:
+                            if deal.reason == mt5.DEAL_REASON_SL:
+                                sl_hit = True
+                            elif deal.reason == mt5.DEAL_REASON_TP:
+                                tp_hit = True
+                            break
+            if sl_hit:
+                log.info(f"MERGE: Quick alert #{qa_ticket} SL touché → signal complet ignoré")
+            elif tp_hit:
+                log.info(f"MERGE: Quick alert #{qa_ticket} TP touché → signal complet ignoré")
+            else:
+                log.info(f"MERGE: Quick alert #{qa_ticket} fermé (autre raison) → exécuter signal complet")
+                execute_signal(full_signal, bridge, manager, tracker)
+            if key in quick_alerts and qa in quick_alerts[key]:
+                quick_alerts[key].remove(qa)
+                if not quick_alerts[key]:
+                    del quick_alerts[key]
+            return
+
+    if not qa_is_limit:
+        log.info(f"MERGE: Position #{qa_ticket} ouverte → SL/TP + LIMIT")
+        bridge.modify_sl_tp(qa_ticket, real_sl, tp_final, "[MERGE-SL-TP]")
+        for t in entry["tickets"]:
+            if t["ticket"] == qa_ticket:
+                if len(full_signal["tps"]) == 1:
+                    tp_trigger_idx = 0
+                else:
+                    tp_trigger_idx = 2 if 3 <= len(full_signal["tps"]) else len(full_signal["tps"]) - 1
+                t["tp_final"]  = tp_final
+                t["tp_target"] = full_signal["tps"][tp_trigger_idx] if len(full_signal["tps"]) > tp_trigger_idx else tp_final
+                t["tp3"]       = t["tp_target"]
+                t["tp_index"]  = tp_trigger_idx
+                break
+        _place_merge_limit(full_signal, bridge, entry, real_sl, tp_final)
+        entry["signal"]           = full_signal
+        entry["_is_quick_alert"]  = False
+    else:
+        if qa_is_limit:
+            if len(full_signal["tps"]) == 1:
+                tp_trigger_idx = 0
+            else:
+                tp_trigger_idx = 2 if 3 <= len(full_signal["tps"]) else len(full_signal["tps"]) - 1
+            bridge.modify_pending_order(qa_ticket, real_sl, tp_final, "[MERGE-ORD-SL-TP]")
+            for o in entry["orders"]:
+                if o["order"] == qa_ticket:
+                    o["tp_final"]  = tp_final
+                    o["tp_target"] = full_signal["tps"][tp_trigger_idx] if len(full_signal["tps"]) > tp_trigger_idx else tp_final
+                    o["tp3"]       = o["tp_target"]
+                    o["tp_index"]  = tp_trigger_idx
+                    break
+            _place_merge_limit(full_signal, bridge, entry, real_sl, tp_final)
+            entry["signal"]          = full_signal
+            entry["_is_quick_alert"] = False
+
+    if abs(full_signal["zone_high"] - full_signal["zone_low"]) >= 1:
+        market_entry_price = None
+        for t in entry["tickets"]:
+            if t.get("role") == "quick_market":
+                market_entry_price = t.get("entry_price")
+                break
+        if not market_entry_price:
+            market_entry_price = entry.get("signal", {}).get("entry", 0)
+        if market_entry_price:
+            entry["_grade_market_price"] = market_entry_price
+            if full_signal["action"] == "BUY":
+                entry["_grade_limit_price"] = full_signal["zone_low"]
+            else:
+                entry["_grade_limit_price"] = full_signal["zone_high"]
+
+    if key in quick_alerts and qa in quick_alerts[key]:
+        quick_alerts[key].remove(qa)
+        if not quick_alerts[key]:
+            del quick_alerts[key]
+    log.info(f"MERGE terminé: {full_signal['action']} {full_signal['symbol']}")
+
+
+def _place_merge_limit(
+    full_signal: dict, bridge: MT5Bridge, entry: dict, real_sl: float, tp_final: float
+):
+    zone_low  = full_signal["zone_low"]
+    zone_high = full_signal["zone_high"]
+    action    = full_signal["action"]
+    if abs(zone_high - zone_low) < 1:
+        return
+    sym_info = bridge._sym(full_signal["symbol"])
+    if not sym_info:
+        return
+    limit_price = zone_high if action == "SELL" else zone_low
+    expiry      = datetime.now(timezone.utc) + timedelta(minutes=ORDER_EXPIRY_MIN)
+    canal       = full_signal.get("source_channel", "Inconnu")
+    ch_num      = CHANNEL_NUM_MAP.get(canal, CHANNEL_NUM_MAP.get(canal.lstrip("-"), "?"))
+    log.info(f"===== | CH{ch_num}-MG | LIMIT | =====")
+    log.info(f"{action} {full_signal['symbol']} | @{limit_price} lot{LOT_UNIQUE_TRADE}")
+    o = bridge.place_limit_order(
+        full_signal, LOT_UNIQUE_TRADE, limit_price, tp_final, expiry, comment=f"CH{ch_num}-MG"
+    )
+    if o:
+        if len(full_signal["tps"]) == 1:
+            tp_trigger_idx = 0
+        else:
+            tp_trigger_idx = 2 if 3 <= len(full_signal["tps"]) else len(full_signal["tps"]) - 1
+        entry["orders"].append({
+            "order":      o,
+            "lot":        LOT_UNIQUE_TRADE,
+            "price":      limit_price,
+            "role":       "merge_limit",
+            "tp_index":   len(full_signal["tps"]) - 1,
+            "tp_target":  tp_final,
+            "tp3":        full_signal["tps"][tp_trigger_idx] if len(full_signal["tps"]) > tp_trigger_idx else tp_final,
+            "tp_final":   tp_final,
+            "sl_step":    0,
+            "trail_active": False,
+        })
+        log.info(f"  ✓ LIMIT #{o} @{limit_price} lot{LOT_UNIQUE_TRADE}")
+    else:
+        log.error(f"  ✗ MERGE LIMIT échoué @{limit_price}")
 
 # =============================================================
 # MAIN

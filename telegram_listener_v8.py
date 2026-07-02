@@ -184,12 +184,14 @@ _main_loop = None
 def send_alert_sync(message: str):
     if not TG_ALERT_CHANNEL or not _alert_client or not _main_loop:
         return
-    coro = _alert_client.send_message(TG_ALERT_CHANNEL, message)
-    future = asyncio.run_coroutine_threadsafe(coro, _main_loop)
     try:
-        future.result(timeout=5)
+        coro = _alert_client.send_message(TG_ALERT_CHANNEL, message)
+        future = asyncio.run_coroutine_threadsafe(coro, _main_loop)
+        future.result(timeout=15)  # ✅ 15s au lieu de 5s
+    except TimeoutError:
+        log.warning(f"[ALERT] Timeout envoi alerte Telegram (15s)")
     except Exception as e:
-        log.warning(f"[ALERT] Erreur envoi alerte Telegram (sync): {e}")
+        log.warning(f"[ALERT] Erreur envoi alerte Telegram: {type(e).__name__}: {e}")
 
 # =============================================================
 # PERFORMANCE TRACKER
@@ -2054,7 +2056,7 @@ async def heartbeat_loop(manager, tracker):
                 f"⏰ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
             )
         except Exception as e:
-            log.warning(f"Heartbeat error: {e}")
+            log.debug(f"Heartbeat error: {e}")  # ✅ debug au lieu de warning
 
 async def main():
     global _main_loop, _alert_client

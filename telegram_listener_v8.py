@@ -2125,16 +2125,31 @@ async def main():
 
             signal_data.source_channel = canal_name
 
-            # Log du signal parsé au format standard
+            # Log du signal parsé au format standard (identique à execute_signal)
             if signal_data.signal_type == "TRADE":
                 action = signal_data.direction or "?"
                 symbol = signal_data.pair or "?"
-                entry = signal_data.zone_mid or 0
                 sl = signal_data.sl or 0
                 tp_final = signal_data.tp_final or 0
-                tps_str = " | ".join([f"TP{i+1}:{t}" for i, t in enumerate(signal_data.tps)]) if signal_data.tps else "-"
-                mode = "QA" if signal_data.is_quick_alert else ("PU" if signal_data.is_single_price else "ZONE")
-                log.info(f"[{canal_name}] {action} {symbol} | Entry: {entry} | {tps_str} | SL: {sl} | {mode}")
+                ch_num = CHANNEL_NUM_MAP.get(canal_name, CHANNEL_NUM_MAP.get(canal_name.lstrip("-"), "?"))
+
+                if signal_data.is_quick_alert:
+                    mode = "QA"
+                elif signal_data.is_single_price:
+                    mode = "PU-S1"
+                else:
+                    mode = "C2"  # zone par défaut
+
+                mt5_comment = f"CH{ch_num}-{mode}"
+                log.info(f"===== | {mt5_comment} | =====")
+
+                if signal_data.is_single_price:
+                    entry = signal_data.zone_mid or 0
+                    log.info(f"{action} {symbol} | Entrée: {entry} | TPf: {tp_final} SL: {sl}")
+                else:
+                    zone_low = signal_data.zone_low or 0
+                    zone_high = signal_data.zone_high or 0
+                    log.info(f"{action} {symbol} | Zone: {zone_low}-{zone_high} | TPf: {tp_final} SL: {sl}")
 
             if signal_data.signal_type == "CLOSE":
                 canal = canal_name

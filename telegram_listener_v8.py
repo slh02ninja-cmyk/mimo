@@ -1653,18 +1653,19 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
         tp1 = all_tps[0]
         tp2 = all_tps[1] if len(all_tps) >= 2 else None
 
-        if tp2 is not None:
-            if action == "BUY" and current > tp2:
-                log.debug(f"CAS 2 — prix > TP2 ({tp2}) → ANNULÉ")
-                return
-            elif action == "SELL" and current < tp2:
-                log.debug(f"CAS 2 — prix < TP2 ({tp2}) → ANNULÉ")
-                return
-
+        # ✅ CAS 2-a : prix entre TP1 et zone
         if action == "BUY":
             between_zone_tp1 = zone_high < current < tp1
         else:
             between_zone_tp1 = tp1 < current < zone_low
+
+        # ✅ CAS 2-b : prix entre TP1 et TP2
+        between_tp1_tp2 = False
+        if tp2 is not None:
+            if action == "BUY":
+                between_tp1_tp2 = tp1 < current < tp2
+            else:
+                between_tp1_tp2 = tp2 < current < tp1
 
         if between_zone_tp1:
             lot_per_order = max(round(LOT_SIZE / 2, 2), sym_info.volume_min)
@@ -1728,7 +1729,7 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
             alert_lines.append(f"Canal: {canal}")
             send_alert_sync("\n".join(alert_lines))
 
-        else:
+        elif between_tp1_tp2:
             lot_per_order = max(round(LOT_SIZE / 2, 2), sym_info.volume_min)
             if action == "BUY":
                 price_1 = zone_high
@@ -1737,7 +1738,7 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
                 price_1 = zone_low
                 price_2 = zone_high
 
-            log.debug(f"CAS 2-b → prix loin de la zone (mais <= TP2) → 2 × LIMIT")
+            log.debug(f"CAS 2-b → prix entre TP1 et TP2 ({tp1}-{tp2}) | prix={current} → 2 × LIMIT")
 
             log.debug(f"  → LIMIT_1 {action} @{price_1} lot={lot_per_order} TP={tp_final} SL={sl}")
             o1 = bridge.place_limit_order(signal, lot_per_order, price_1, tp_final, expiry, comment=mt5_comment)
@@ -1786,6 +1787,11 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
                 f"TP: {tp_final} | SL: {sl}\n"
                 f"Canal: {canal}"
             )
+
+        else:
+            # Prix hors zone (ni entre zone-TP1, ni entre TP1-TP2)
+            log.debug(f"CAS 2 — prix hors zone → ANNULÉ | prix={current} | TP1={tp1} TP2={tp2}")
+            return
 
     if not orders and not tickets:
         log.error("Aucun ordre placé.")

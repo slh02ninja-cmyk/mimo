@@ -2115,15 +2115,26 @@ async def main():
             if not _is_signal_message(text):
                 return
 
-            # Nettoyer le texte pour l'affichage log (supprimer gras, emojis, etc.)
+            # Log brut en DEBUG seulement
             clean_text = text.replace('*', '').replace('\n', ' | ')[:150]
-            log.info(f"[{canal_name}] {clean_text}")
+            log.debug(f"[{canal_name}] {clean_text}")
 
             signal_data = parser.parse(text)
             if signal_data is None:
                 return
 
             signal_data.source_channel = canal_name
+
+            # Log du signal parsé au format standard
+            if signal_data.signal_type == "TRADE":
+                action = signal_data.direction or "?"
+                symbol = signal_data.pair or "?"
+                entry = signal_data.zone_mid or 0
+                sl = signal_data.sl or 0
+                tp_final = signal_data.tp_final or 0
+                tps_str = " | ".join([f"TP{i+1}:{t}" for i, t in enumerate(signal_data.tps)]) if signal_data.tps else "-"
+                mode = "QA" if signal_data.is_quick_alert else ("PU" if signal_data.is_single_price else "ZONE")
+                log.info(f"[{canal_name}] {action} {symbol} | Entry: {entry} | {tps_str} | SL: {sl} | {mode}")
 
             if signal_data.signal_type == "CLOSE":
                 canal = canal_name

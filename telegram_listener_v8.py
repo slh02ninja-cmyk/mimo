@@ -858,7 +858,7 @@ class TradeManager:
         self._clear_all_entries()
 
         log.info(f"===== | DAILY-LIMIT | =====")
-        log.info(f"P&L total: {total:.2f}$ | Positions fermées: {nb_positions} | Ordres annulés: {cancelled}")
+        log.info(f"P&L: {total:.2f}$ | {nb_positions} positions fermées | {cancelled} ordres annulés")
 
         send_alert_sync(
             f"🚨 OBJECTIF QUOTIDIEN ATTEINT\n"
@@ -1013,7 +1013,7 @@ class TradeManager:
         pos_info = f"{be_applied} POS"
         if not signal.get("is_single_price", False) and pending_before > 0:
             pos_info += f" | {pending_before} PENDING annulés"
-        log.info(f"{action} {signal['symbol']} | SL @{be_price:.2f} | Gain cible: {target_gain:.2f}$ | {pos_info}")
+        log.info(f"{action} {signal['symbol']} | SL @{be_price:.2f} | {pos_info}")
 
         alert_lines = [
             f"🔒 {action} {signal['symbol']} | BE ACTIVE",
@@ -1075,7 +1075,7 @@ class TradeManager:
             mt5_comment = entry.get("_mt5_comment", f"CH{ch_num}-UNK")
 
             log.info(f"===== | {mt5_comment} | TP_TRIGGER | =====")
-            log.info(f"{action} {symbol} | Prix: {prices_str} | Ordres annulés: {pending_count}")
+            log.info(f"{action} {symbol} | {prices_str} | {pending_count} ordres annulés")
 
             send_alert_sync(
                 f"⚠️ {action} {symbol} | TP_TRIGGER\n"
@@ -1186,6 +1186,10 @@ class TradeManager:
                     entry["tickets"].append(tk)
                     log.debug(f"Ordre #{o['order']} rempli → ticket={pos.ticket} @{pos.price_open}")
 
+                    # Log LIMIT remplie
+                    log.info(f"===== | {mt5_comment} | LIMIT | =====")
+                    log.info(f"{action} {symbol} | #{pos.ticket} @{pos.price_open} lot{o['lot']}")
+
                     sl_price = signal.get("sl", 0)
                     send_alert_sync(
                         f"🔵 {action} {symbol} | LIMIT REMPLIE\n"
@@ -1209,7 +1213,7 @@ class TradeManager:
                 prices = [f"@{o['price']}" for o in expired_orders if "price" in o]
                 prices_str = ", ".join(prices) if prices else "inconnu"
                 log.info(f"===== | {mt5_comment} | EXPIRATION | =====")
-                log.info(f"{action} {symbol} | Prix: {prices_str} | Ordres annulés: {len(expired_orders)}")
+                log.info(f"{action} {symbol} | {prices_str} | {len(expired_orders)} ordres annulés")
                 send_alert_sync(
                     f"🕒 {action} {symbol} | EXPIRATION\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
@@ -1289,7 +1293,8 @@ class TradeManager:
                     if total_pnl >= target_gain:
                         log.info(f"===== | {mt5_comment} | TP-FIXED | =====")
                         ticket_list = ", ".join([f"#{t['ticket']}" for t in active_tickets])
-                        log.info(f"{action} {symbol} | P&L: {total_pnl:+.2f}$ | {len(active_tickets)} POS {ticket_list}")
+                        log.info(f"{action} {symbol} | P&L: {total_pnl:+.2f}$ | {len(active_tickets)} POS")
+                        log.info(f"{ticket_list}")
                         for t in active_tickets:
                             if not t.get("_tp_fixed_closed"):
                                 self.bridge.close_position(t["ticket"], "TP-FIXED")
@@ -1562,7 +1567,7 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
         for t in tickets:
             parts.append(f"MKT #{t['ticket']} @{t['entry_price']} lot{t['lot']}")
         for o in orders:
-            parts.append(f"LMT #{o['order']} @{o['price']} lot{o['lot']}")
+            parts.append(f"LIMIT #{o['order']} @{o['price']} lot{o['lot']}")
         if parts:
             log.info(f"  {' | '.join(parts)}")
         return
@@ -1786,9 +1791,27 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
     log.info(f"{action} {symbol} | Zone: {zone_str} | Prix: {current} | TPf: {tp_final} SL: {sl}")
     parts = []
     for t in tickets:
-        parts.append(f"{t['role'].upper()} #{t['ticket']} @{t['entry_price']} lot{t['lot']}")
+        role = t['role']
+        if 'market' in role:
+            label = 'MKT'
+        elif 'limit_1' in role or role == 'limit_single' or role == 'limit_cas1':
+            label = 'LIMIT_1'
+        elif 'limit_2' in role or role == 'limit_cas2':
+            label = 'LIMIT_2'
+        else:
+            label = role.upper()
+        parts.append(f"{label} #{t['ticket']} @{t['entry_price']} lot{t['lot']}")
     for o in orders:
-        parts.append(f"{o['role'].upper()} #{o['order']} @{o['price']} lot{o['lot']}")
+        role = o['role']
+        if 'market' in role:
+            label = 'MKT'
+        elif 'limit_1' in role or role == 'limit_single' or role == 'limit_cas1':
+            label = 'LIMIT_1'
+        elif 'limit_2' in role or role == 'limit_cas2':
+            label = 'LIMIT_2'
+        else:
+            label = role.upper()
+        parts.append(f"{label} #{o['order']} @{o['price']} lot{o['lot']}")
     if parts:
         log.info(f"  {' | '.join(parts)}")
 
@@ -1914,6 +1937,11 @@ def execute_quick_alert(signal: dict, bridge: MT5Bridge, manager: TradeManager,
             else:
                 log.debug("Quick Alert existante introuvable → nouvelle alerte")
 
+    # Log standard pour Quick Alert
+    mt5_comment_qa = f"CH{ch_num}-QA"
+    log.info(f"===== | {mt5_comment_qa} | =====")
+    log.info(f"{action} {symbol} | Entrée: {entry_price} | TPf: {default_tp} SL: {sl}")
+
     orders = []
     tickets = []
     order_ticket = None
@@ -1942,6 +1970,7 @@ def execute_quick_alert(signal: dict, bridge: MT5Bridge, manager: TradeManager,
                 "be_sl": 0,
             })
             order_ticket = t
+            log.info(f"  MKT #{t} @{current} lot{LOT_UNIQUE_TRADE}")
             log.debug(f"✓ QUICK MARKET #{t}")
             send_alert_sync(
                 f"⚡ {action} {symbol} | QUICK ALERT\n"
@@ -1976,6 +2005,7 @@ def execute_quick_alert(signal: dict, bridge: MT5Bridge, manager: TradeManager,
             })
             order_ticket = o
             is_limit_order = True
+            log.info(f"  LIMIT #{o} @{entry_price} lot{LOT_UNIQUE_TRADE}")
             log.debug(f"✓ QUICK LIMIT #{o}")
             send_alert_sync(
                 f"⚡ {action} {symbol} | QUICK ALERT\n"

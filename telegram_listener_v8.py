@@ -2115,7 +2115,9 @@ async def main():
             if not _is_signal_message(text):
                 return
 
-            log.info(f"[{canal_name}] {text[:150].replace(chr(10), ' | ')}")
+            # Nettoyer le texte pour l'affichage log (supprimer gras, emojis, etc.)
+            clean_text = text.replace('*', '').replace('\n', ' | ')[:150]
+            log.info(f"[{canal_name}] {clean_text}")
 
             signal_data = parser.parse(text)
             if signal_data is None:

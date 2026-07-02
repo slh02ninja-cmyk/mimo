@@ -725,6 +725,9 @@ class TradeManager:
             "market_cas1",
             "market_cas2",
             "limit_1",
+            "limit_2",       # ✅ AJOUTÉ : CAS 2-b a deux limit orders
+            "limit_cas1",
+            "limit_cas2",    # ✅ AJOUTÉ : CAS 2-a a une limit
             "quick_market",
             "quick_limit",
             "quick_limit_filled"
@@ -912,6 +915,8 @@ class TradeManager:
         return 0.0
 
     def _check_pnl_trigger(self, entry: dict) -> bool:
+        best_profit = 0.0
+        best_role = "?"
         for t in entry.get("tickets", []):
             if t.get("be_active"):
                 continue
@@ -919,8 +924,15 @@ class TradeManager:
             if t.get("role") not in self._be_allowed_roles:
                 continue
             pos = self._get_pos(t["ticket"])
-            if pos and pos.profit >= PNL_TRIGGER_USD:
-                return True
+            if pos:
+                if pos.profit > best_profit:
+                    best_profit = pos.profit
+                    best_role = t.get("role", "?")
+                if pos.profit >= PNL_TRIGGER_USD:
+                    return True
+        # ✅ LOG DEBUG : pourquoi le BE ne se déclenche pas
+        if best_profit > 0:
+            log.debug(f"[BE] PnL insuffisant : {best_profit:.2f}$ < {PNL_TRIGGER_USD}$ (rôle={best_role})")
         return False
 
     def _apply_be_on_open_positions(self, entry: dict, action: str):
@@ -930,26 +942,33 @@ class TradeManager:
         mt5_comment = entry.get("_mt5_comment", f"CH{ch_num}-UNK")
         pending_before = len(entry.get("orders", []))
 
+        # 1. Annuler les ordres pending non remplis
         self._cancel_pending_orders_for_entry(entry)
 
+        # 2. Compter les positions ouvertes
         open_tickets = [t for t in entry.get("tickets", []) if self._get_pos(t["ticket"])]
         open_count = len(open_tickets)
         if open_count == 0:
             log.warning(f"Aucune position ouverte au moment du BE pour {entry.get('_signal_id', '?')}")
             return
 
-        gain_per_position = self._get_gain_per_position(entry)
         be_applied = 0
 
+        # 3. Calculer le TP fixe : TP_FIXED_GAIN_USD × nombre de positions
+        target_gain = TP_FIXED_GAIN_USD * open_count
+
         if open_count == 1:
+            # ★ CAS : 1 position ouverte → BE @ entry ★
             t = open_tickets[0]
             entry_price = t.get("entry_price", 0)
             if entry_price == 0:
                 return
+            be_price = entry_price
             pos = self._get_pos(t["ticket"])
             if pos:
                 sym = mt5.symbol_info(pos.symbol)
                 be_price = round(entry_price, sym.digits if sym else 2)
+                # ✅ BE @ entry seulement — TP reste le TP final du signal (pas modifié)
                 if self.bridge.modify_sl(t["ticket"], be_price, f"[BE 1POS @{be_price}]"):
                     t["be_active"] = True
                     t["be_sl"] = be_price
@@ -958,6 +977,7 @@ class TradeManager:
             entry["_be_market_entry"] = entry_price
 
         elif open_count == 2:
+            # ★ CAS : 2 positions ouvertes → BE au médian ★
             entry_1 = open_tickets[0].get("entry_price", 0)
             entry_2 = open_tickets[1].get("entry_price", 0)
             if entry_1 == 0 or entry_2 == 0:
@@ -968,6 +988,7 @@ class TradeManager:
                 sym = mt5.symbol_info(pos.symbol)
                 be_price = round(be_price, sym.digits if sym else 2)
             for t in open_tickets:
+                # ✅ BE au médian — TP reste le TP final du signal (pas modifié)
                 if self.bridge.modify_sl(t["ticket"], be_price, f"[BE 2POS @{be_price}]"):
                     t["be_active"] = True
                     t["be_sl"] = be_price
@@ -982,7 +1003,6 @@ class TradeManager:
             log.warning(f"Aucun BE posé pour {entry.get('_signal_id', '?')} → abandon")
             return
 
-        target_gain = gain_per_position * be_applied
         entry["_target_gain"] = target_gain
         entry["_be_activated"] = True
         entry["_open_positions_at_be"] = be_applied
@@ -990,18 +1010,19 @@ class TradeManager:
         log.info(f"===== | {mt5_comment} | BE | =====")
         pos_info = f"{be_applied} POS"
         if not signal.get("is_single_price", False) and pending_before > 0:
-            pos_info += f" | {pending_before} PENDING"
-        log.info(f"{action} {signal['symbol']} | SL @{be_price:.2f} | {pos_info}")
+            pos_info += f" | {pending_before} PENDING annulés"
+        log.info(f"{action} {signal['symbol']} | SL @{be_price:.2f} | Gain cible: {target_gain:.2f}$ | {pos_info}")
 
         alert_lines = [
             f"🔒 {action} {signal['symbol']} | BE ACTIVE",
             "━━━━━━━━━━━━━━━━━━",
             f"NB POS : {be_applied} positions",
             f"SL : {be_price:.2f}",
+            f"Gain cible (close manuel) : {target_gain:.2f}$",
         ]
         if not signal.get("is_single_price", False) and pending_before > 0:
             ordre_txt = "ordre" if pending_before == 1 else "ordres"
-            alert_lines.append(f"PENDING : {pending_before} {ordre_txt}")
+            alert_lines.append(f"PENDING annulés : {pending_before} {ordre_txt}")
         alert_lines.append(f"Canal: {canal}")
         send_alert_sync("\n".join(alert_lines))
 
@@ -1014,8 +1035,8 @@ class TradeManager:
             if self._get_pos(t["ticket"]):
                 has_open_position = True
                 break
-        if has_open_position:
-            return
+        # ✅ MODIFIÉ : ne pas skip si position ouverte — le TP_TRIGGER doit quand même
+        # annuler les ordres pending restants (ex: CAS2-b, limit_1 rempli, limit_2 pending)
         if not entry.get("orders"):
             return
         tp_trigger = self._get_tp_trigger(entry)
@@ -1034,24 +1055,32 @@ class TradeManager:
         elif action == "SELL" and current <= tp_trigger:
             triggered = True
         if triggered:
-            log.debug(f"TP_TRIGGER ({tp_trigger:.2f}) atteint sans position ouverte → annulation des ordres pending")
+            # ✅ Capturer les infos AVANT annulation
+            pending_count = len(entry.get("orders", []))
+            prices = [f"@{o['price']}" for o in entry.get("orders", []) if "price" in o]
+            prices_str = ", ".join(prices) if prices else "inconnu"
+
+            if has_open_position:
+                log.debug(f"TP_TRIGGER ({tp_trigger:.2f}) atteint avec position ouverte → annulation de {pending_count} ordre(s) pending")
+            else:
+                log.debug(f"TP_TRIGGER ({tp_trigger:.2f}) atteint sans position ouverte → annulation des ordres pending")
+
             self._cancel_pending_orders_for_entry(entry)
+
             signal = entry.get("signal", {})
             canal = signal.get("source_channel", "Inconnu")
             ch_num = CHANNEL_NUM_MAP.get(canal, CHANNEL_NUM_MAP.get(canal.lstrip("-"), "?"))
             mt5_comment = entry.get("_mt5_comment", f"CH{ch_num}-UNK")
 
-            prices = [f"@{o['price']}" for o in entry.get("orders", []) if "price" in o]
-            prices_str = ", ".join(prices) if prices else "inconnu"
-
             log.info(f"===== | {mt5_comment} | TP_TRIGGER | =====")
-            log.info(f"{action} {symbol} | Prix: {prices_str} | Ordres annulés: {len(entry.get('orders', []))}")
+            log.info(f"{action} {symbol} | Prix: {prices_str} | Ordres annulés: {pending_count}")
 
             send_alert_sync(
                 f"⚠️ {action} {symbol} | TP_TRIGGER\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
-                f"Positions : {len(entry.get('orders', []))}\n"
+                f"Ordres annulés : {pending_count}\n"
                 f"Prix : {prices_str}\n"
+                f"Position ouverte : {'Oui' if has_open_position else 'Non'}\n"
                 f"Canal: {canal}"
             )
 

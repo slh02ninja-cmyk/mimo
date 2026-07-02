@@ -1308,6 +1308,10 @@ class TradeManager:
                             f"Ticket(s): {ticket_list}\n"
                             f"Canal: {canal}"
                         )
+                        # ✅ Retirer immédiatement l'entry de self.active
+                        with self._lock:
+                            if entry in self.active:
+                                self.active.remove(entry)
                         continue
 
     # ★★★ _resolve_order avec cache TTL ★★★

@@ -2038,25 +2038,8 @@ def _is_signal_message(text: str) -> bool:
     return False
 
 async def heartbeat_loop(manager, tracker):
-    while True:
-        await asyncio.sleep(HEARTBEAT_INTERVAL_MIN * 60)
-        if not manager or not tracker:
-            continue
-        try:
-            positions = mt5.positions_get()
-            nb_positions = len([p for p in positions if p.magic == MAGIC_NUMBER]) if positions else 0
-            pnl = manager._daily_pnl + manager._get_floating_pnl()
-            nb_trades = len(tracker._trades_cache)
-            send_alert_sync(
-                f"🟢 BOT ACTIF\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"📊 P&L: {pnl:.2f}$\n"
-                f"📌 Positions: {nb_positions}\n"
-                f"📈 Signaux traités: {nb_trades}\n"
-                f"⏰ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
-            )
-        except Exception as e:
-            log.debug(f"Heartbeat error: {e}")  # ✅ debug au lieu de warning
+    """Heartbeat désactivé — pas de messages BOT ACTIF"""
+    return
 
 async def main():
     global _main_loop, _alert_client

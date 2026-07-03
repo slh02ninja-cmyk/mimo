@@ -336,12 +336,20 @@ SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4070.0 | TPf: 4054.0 SL: 4090.0
 </table>
 
 <h3>5.3 Whitelist BE complète</h3>
-<div class="signal-box">"market_single", "limit_single",
-"market_cas1", "market_cas2",
-"limit_1", "limit_2",
-"limit_cas1", "limit_cas2",
-"quick_market", "quick_limit", "quick_limit_filled",
-"merge_limit"</div>
+<div class="signal-box">"market_single",       <span class="muted"># Prix Unique S1</span>
+"limit_single",        <span class="muted"># Prix Unique S2</span>
+"market_cas1",         <span class="muted"># CAS 1</span>
+"market_cas2",         <span class="muted"># CAS 2-a</span>
+"limit_1",             <span class="muted"># CAS 2-b</span>
+"quick_market",        <span class="muted"># Quick Alert market</span>
+"quick_limit_filled",  <span class="muted"># Quick Alert limit rempli</span>
+"merge_limit"          <span class="muted"># Fusion QA → limit</span></div>
+
+<h4>Rôles exclus (ne déclenchent jamais le BE)</h4>
+<div class="signal-box"><span class="red">"limit_2"</span>      → pending en CAS 2-b (annulé par BE ou TP_TRIGGER)
+<span class="red">"limit_cas1"</span>   → pending en CAS 1 (annulé par BE)
+<span class="red">"limit_cas2"</span>   → pending en CAS 2-a (annulé par BE)
+<span class="red">"quick_limit"</span>  → pending avant remplissage (annulé par BE)</div>
 
 <h3>5.4 Exemples BE — Tous les cas</h3>
 

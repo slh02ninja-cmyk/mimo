@@ -723,18 +723,14 @@ class TradeManager:
 
         # ★★★ WHITELIST des rôles autorisés à déclencher le BE ★★★
         self._be_allowed_roles = {
-            "market_single",
-            "limit_single",
-            "market_cas1",
-            "market_cas2",
-            "limit_1",
-            "limit_2",       # ✅ AJOUTÉ : CAS 2-b a deux limit orders
-            "limit_cas1",
-            "limit_cas2",    # ✅ AJOUTÉ : CAS 2-a a une limit
-            "quick_market",
-            "quick_limit",
-            "quick_limit_filled",
-            "merge_limit"       # ✅ AJOUTÉ : fusion QA → limit
+            "market_single",       # Prix Unique S1
+            "limit_single",        # Prix Unique S2
+            "market_cas1",         # CAS 1
+            "market_cas2",         # CAS 2-a
+            "limit_1",             # CAS 2-b
+            "quick_market",        # Quick Alert market
+            "quick_limit_filled",  # Quick Alert limit rempli
+            "merge_limit",         # Fusion QA → limit
         }
 
         self._daily_pnl = self._recover_daily_pnl()

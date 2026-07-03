@@ -6,6 +6,12 @@
 
 ---
 
+## 🔍 En cours — Relecture documentation HTML
+**Date :** 2026-07-04
+SaLaH relit `bot_documentation_v825.html` pour identifier et corriger les erreurs restantes.
+
+---
+
 ## 🔴 Bugs critiques corrigés
 
 ### 1. BE — `be_price` potentiellement non définie

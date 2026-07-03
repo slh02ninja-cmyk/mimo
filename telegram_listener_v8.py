@@ -91,6 +91,7 @@ MAX_SPREAD_POINTS = float(os.getenv("MAX_SPREAD_POINTS", "50"))
 TP_FIXED_ENABLED = os.getenv("TP_FIXED_ENABLED", "true").lower() == "true"
 TP_FIXED_GAIN_USD = float(os.getenv("TP_FIXED_GAIN_USD", "15.0"))
 PNL_TRIGGER_USD = float(os.getenv("PNL_TRIGGER_USD", "8.0"))
+BE_TP_TRIGGER_PCT = float(os.getenv("BE_TP_TRIGGER_PCT", "0.5"))  # 50% du chemin vers TP1
 
 # === FILTRES ===
 TIME_FILTER_ENABLED = os.getenv("TIME_FILTER_ENABLED", "true").lower() == "true"
@@ -99,7 +100,7 @@ TRADING_END_HOUR = int(os.getenv("TRADING_END_HOUR", "20"))
 DAILY_PROFIT_LIMIT = float(os.getenv("DAILY_PROFIT_LIMIT", "30.0"))
 
 # === CACHE TTL ===
-CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "1"))
+
 
 # === HEARTBEAT ===
 HEARTBEAT_INTERVAL_MIN = int(os.getenv("HEARTBEAT_INTERVAL_MIN", "10"))  # minutes
@@ -740,10 +741,7 @@ class TradeManager:
         self._daily_pnl_day = get_trading_day_start().day
         log.info(f"<<<<< INFO >>>>> P&L quotidien récupéré : {self._daily_pnl:.2f}$")
 
-        self._order_cache = {}
-        self._cache_ttl = CACHE_TTL_SECONDS
-        self._cache_timestamps = {}
-        log.info(f"<<<<< INFO >>>>> Cache TTL configuré à {self._cache_ttl} secondes")
+
 
     # =============================================================
     # P&L QUOTIDIEN (avec verrouillage)
@@ -805,9 +803,7 @@ class TradeManager:
             if order.magic == MAGIC_NUMBER:
                 if self.bridge.cancel_order(order.ticket):
                     cancelled += 1
-                    if order.ticket in self._order_cache:
-                        del self._order_cache[order.ticket]
-                        del self._cache_timestamps[order.ticket]
+
         log.debug(f"Annulation de {cancelled} ordre(s) pending (tous signaux)")
         return cancelled
 
@@ -874,19 +870,46 @@ class TradeManager:
     # GESTION DU BE (avec whitelist)
     # =============================================================
     def _cancel_pending_orders_for_entry(self, entry: dict):
+        # ★★★ FIX : vérifier si les ordres sont déjà remplis avant d'annuler ★★★
+        # Le délai MT5 history peut faire qu'un ordre rempli n'est pas encore détecté.
+        # On vérifie via mt5.orders_get() si l'ordre existe encore.
         orders_to_cancel = []
+        already_filled = []
         for o in entry.get("orders", []):
             order_ticket = o.get("order", 0)
-            if order_ticket:
+            if not order_ticket:
+                continue
+            # Vérifier si l'ordre existe encore dans MT5
+            mt5_order = mt5.orders_get(ticket=order_ticket)
+            if mt5_order:
+                # L'ordre est toujours pending → on peut l'annuler
                 orders_to_cancel.append(order_ticket)
+            else:
+                # L'ordre n'existe plus → il a été rempli !
+                # Chercher la position correspondante
+                symbol = entry.get("signal", {}).get("symbol", "")
+                pos = self._resolve_order(order_ticket, symbol)
+                if pos:
+                    tk = {
+                        "ticket": pos.ticket, "lot": o["lot"], "role": o["role"],
+                        "entry_price": pos.price_open,
+                        "tp_index": o.get("tp_index", 0), "tp_target": o.get("tp_target", 0),
+                        "tp3": o.get("tp3", 0), "tp_final": o.get("tp_final", 0),
+                        "sl_step": 0, "trail_active": False, "be_active": False, "be_sl": 0,
+                    }
+                    entry["tickets"].append(tk)
+                    already_filled.append(order_ticket)
+                    log.info(f"[BE] Ordre #{order_ticket} déjà rempli → ticket #{pos.ticket} ajouté")
+
+        if already_filled:
+            log.info(f"[BE] {len(already_filled)} ordre(s) déjà rempli(s) → ajoutés aux tickets")
+
         if not orders_to_cancel:
             return
-        log.debug(f"Annulation des ordres pending du signal {entry.get('_signal_id', '?')}")
+
+        log.debug(f"Annulation de {len(orders_to_cancel)} ordre(s) pending")
         for ticket in orders_to_cancel:
             self.bridge.cancel_order(ticket)
-            if ticket in self._order_cache:
-                del self._order_cache[ticket]
-                del self._cache_timestamps[ticket]
             log.debug(f"Annulation ordre pending #{ticket}")
         entry["orders"] = []
 
@@ -918,8 +941,14 @@ class TradeManager:
         return 0.0
 
     def _check_pnl_trigger(self, entry: dict) -> bool:
-        best_profit = 0.0
-        best_role = "?"
+        # ★★★ FIX : utiliser min_profit (pire position) au lieu de best_profit ★★★
+        # Le BE se déclenche quand la PIRE position atteint le seuil.
+        # Pour BUY: market @ 2350 (pire entrée) doit atteindre 8$
+        # Pour BUY: limit @ 2340 (meilleure entrée) aura forcément plus de profit.
+        # → La market est protégée en premier.
+        min_profit = float('inf')
+        min_role = "?"
+        has_active = False
         for t in entry.get("tickets", []):
             if t.get("be_active"):
                 continue
@@ -928,14 +957,44 @@ class TradeManager:
                 continue
             pos = self._get_pos(t["ticket"])
             if pos:
-                if pos.profit > best_profit:
-                    best_profit = pos.profit
-                    best_role = t.get("role", "?")
-                if pos.profit >= PNL_TRIGGER_USD:
-                    return True
+                has_active = True
+                if pos.profit < min_profit:
+                    min_profit = pos.profit
+                    min_role = t.get("role", "?")
+        if has_active and min_profit >= PNL_TRIGGER_USD:
+            return True
+
+        # ★★★ FIX : Déclenchement basé sur la distance au TP si PnL insuffisant ★★★
+        # Utile pour les petits lots où le PnL met trop longtemps à atteindre le seuil
+        for t in entry.get("tickets", []):
+            if t.get("be_active") or t.get("role") not in self._be_allowed_roles:
+                continue
+            pos = self._get_pos(t["ticket"])
+            if not pos:
+                continue
+            signal = entry.get("signal", {})
+            action = signal.get("action", "")
+            entry_price = t.get("entry_price", 0)
+            tps = signal.get("tps", [])
+            if not tps or entry_price == 0:
+                continue
+            tp1 = tps[0]
+            sym = mt5.symbol_info(pos.symbol)
+            if sym is None:
+                continue
+            tick = mt5.symbol_info_tick(sym.name)
+            if tick is None:
+                continue
+            current = tick.bid if action == "BUY" else tick.ask
+            tp_distance = abs(tp1 - entry_price)
+            price_distance = abs(current - entry_price)
+            if tp_distance > 0 and (price_distance / tp_distance) >= BE_TP_TRIGGER_PCT:
+                log.debug(f"[BE] Déclenchement distance : {price_distance:.2f}/{tp_distance:.2f} = {price_distance/tp_distance*100:.0f}% >= {BE_TP_TRIGGER_PCT*100:.0f}%")
+                return True
+
         # ✅ LOG DEBUG : pourquoi le BE ne se déclenche pas
-        if best_profit > 0:
-            log.debug(f"[BE] PnL insuffisant : {best_profit:.2f}$ < {PNL_TRIGGER_USD}$ (rôle={best_role})")
+        if has_active and min_profit < float('inf'):
+            log.debug(f"[BE] PnL insuffisant : {min_profit:.2f}$ < {PNL_TRIGGER_USD}$ (pire rôle={min_role})")
         return False
 
     def _apply_be_on_open_positions(self, entry: dict, action: str):
@@ -980,7 +1039,9 @@ class TradeManager:
             entry["_be_market_entry"] = entry_price
 
         elif open_count == 2:
-            # ★ CAS : 2 positions ouvertes → BE au médian ★
+            # ★ CAS : 2 positions ouvertes → SL au médian ★
+            # Market @ 2350 + Limit @ 2340 → SL @ 2345 pour les deux
+            # → Si prix revient à 2345 : market perd 5$, limit gagne 5$ = 0$ total
             entry_1 = open_tickets[0].get("entry_price", 0)
             entry_2 = open_tickets[1].get("entry_price", 0)
             if entry_1 == 0 or entry_2 == 0:
@@ -991,7 +1052,6 @@ class TradeManager:
                 sym = mt5.symbol_info(pos.symbol)
                 be_price = round(be_price, sym.digits if sym else 2)
             for t in open_tickets:
-                # ✅ BE au médian — TP reste le TP final du signal (pas modifié)
                 if self.bridge.modify_sl(t["ticket"], be_price, f"[BE 2POS @{be_price}]"):
                     t["be_active"] = True
                     t["be_sl"] = be_price
@@ -1028,6 +1088,8 @@ class TradeManager:
             alert_lines.append(f"PENDING annulés : {pending_before} {ordre_txt}")
         alert_lines.append(f"Canal: {canal}")
         send_alert_sync("\n".join(alert_lines))
+
+    # ★★★ FIX : Appliquer BE aux nouveaux tickets (limit remplies après BE initial) ★★★
 
     # =============================================================
     # TP_TRIGGER PENDING UNIQUEMENT
@@ -1203,9 +1265,6 @@ class TradeManager:
 
                 elif now > entry.get("expiry", now):
                     self.bridge.cancel_order(o["order"])
-                    if o["order"] in self._order_cache:
-                        del self._order_cache[o["order"]]
-                        del self._cache_timestamps[o["order"]]
                     expired_orders.append(o)
                 else:
                     still_pending.append(o)
@@ -1276,6 +1335,13 @@ class TradeManager:
                             self.active.remove(entry)
                     continue
 
+            # ══════════════════════════════════════════════════════════════
+            # ★★★ PHASE 3 : GESTION BE ★★★
+            # ══════════════════════════════════════════════════════════════
+            # 1 position → pending annulés, SL @ entry
+            # 2 positions → SL au médian (total = 0$)
+            # Quand BE triggers → pending annulés → jamais de limit après BE
+
             if TP_FIXED_ENABLED and not entry.get("_be_activated"):
                 if self._check_pnl_trigger(entry):
                     self._apply_be_on_open_positions(entry, action)
@@ -1314,41 +1380,21 @@ class TradeManager:
                                 self.active.remove(entry)
                         continue
 
-    # ★★★ _resolve_order avec cache TTL ★★★
+    # ★★★ FIX : Pas de cache pour les ordres pending ★★★
+    # Le cache de 1s + délai MT5 = la limit peut être invisible quand le BE se déclenche.
+    # On query MT5 directement à chaque cycle.
     def _resolve_order(self, order_ticket: int, symbol: str):
-        now = datetime.now(timezone.utc)
-        if order_ticket in self._order_cache:
-            cache_time = self._cache_timestamps.get(order_ticket, now - timedelta(hours=1))
-            if (now - cache_time).total_seconds() < self._cache_ttl:
-                cached = self._order_cache[order_ticket]
-                if cached is None:
-                    return None
-                pos = mt5.positions_get(ticket=cached)
-                if pos:
-                    return pos[0]
-                else:
-                    del self._order_cache[order_ticket]
-                    del self._cache_timestamps[order_ticket]
-                    return None
-
-        since = now - timedelta(days=1)
+        since = datetime.now(timezone.utc) - timedelta(days=1)
         deals = mt5.history_deals_get(symbol=symbol, from_time=since)
         if deals is None or len(deals) == 0:
-            self._order_cache[order_ticket] = None
-            self._cache_timestamps[order_ticket] = now
             return None
 
         for deal in reversed(deals):
             if deal.order == order_ticket and deal.entry == mt5.DEAL_ENTRY_IN:
                 positions = mt5.positions_get(ticket=deal.position_id)
                 if positions:
-                    pos = positions[0]
-                    self._order_cache[order_ticket] = pos.ticket
-                    self._cache_timestamps[order_ticket] = now
-                    return pos
+                    return positions[0]
 
-        self._order_cache[order_ticket] = None
-        self._cache_timestamps[order_ticket] = now
         return None
 
 # =============================================================
@@ -2406,9 +2452,9 @@ async def main():
                 log.info(f"  {env_name} : {ch_value}")
         log.info(f" Lot total : {LOT_SIZE} | Lot unique : {LOT_UNIQUE_TRADE}")
         log.info(f" Gain fixe par position : {TP_FIXED_GAIN_USD}$")
-        log.info(f" BE déclenché à : {PNL_TRIGGER_USD}$")
+        log.info(f" BE déclenché à : {PNL_TRIGGER_USD}$ ou {BE_TP_TRIGGER_PCT*100:.0f}% du TP1")
         log.info(f" Objectif quotidien : {DAILY_PROFIT_LIMIT}$")
-        log.info(f" Cache TTL : {CACHE_TTL_SECONDS}s")
+
         log.info(f" Heartbeat : {HEARTBEAT_INTERVAL_MIN} min")
         log.info(f" SL_PRIX_UNIQUE : {SL_PRIX_UNIQUE}$")
         log.info(f" SL_PLUS_PROCHE : {SL_PLUS_PROCHE}$")

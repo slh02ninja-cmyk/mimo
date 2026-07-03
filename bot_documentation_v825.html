@@ -343,57 +343,413 @@ SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4070.0 | TPf: 4054.0 SL: 4090.0
 "quick_market", "quick_limit", "quick_limit_filled",
 "merge_limit"</div>
 
-<h3>5.4 Exemple BE — CAS 2-b (1 position)</h3>
-<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
-<span class="muted">Limit_1 @4075 rempli, Limit_2 @4080 pending</span>
+<h3>5.4 Exemples BE — Tous les cas</h3>
 
-<span class="cyan">Étape 1 :</span> Prix descend à 4067 → P&amp;L = +8.00$ &ge; PNL_TRIGGER
+<h4>5.4.1 Prix Unique S1 (Market)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> BUY XAUUSD @4512, TPf=4527, SL=4502
+<span class="muted">Prix actuel : 4508 (entre SL et entry)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → prix 4508 &lt; 4512 → Scénario 1
+→ MARKET BUY #100 @4508 lot=0.01 (market_single)
+entry["tickets"] = [{#100, market_single, entry=4508, be_active=False}]
+entry["orders"] = []
+
+<span class="cyan">Étape 2 — Prix monte à 4516 :</span>
+P&amp;L #100 = (4516-4508)&times;0.10 = +8.00$ &ge; PNL_TRIGGER
+→ BE déclenché (market_single)
+→ open_count = 1 → SL @ entry = 4508
+→ target_gain = 15 &times; 1 = 15$
+===== | CH1-PU-S1 | BE | =====
+BUY XAUUSD | SL @4508.0 | 1 POS
+
+<span class="cyan">Étape 3 — Prix monte à 4523 :</span>
+P&amp;L #100 = (4523-4508)&times;0.10 = +15.00$ &ge; target_gain
+→ TP_FIXED → fermeture manuelle
+===== | CH1-PU-S1 | TP-FIXED | =====
+BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
+#100</div>
+
+<h4>5.4.2 Prix Unique S2 (Limit)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> BUY XAUUSD @4512, TPf=4527, SL=4502
+<span class="muted">Prix actuel : 4515 (au-dessus de entry)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → prix 4515 &gt; 4512 → Scénario 2
+→ BUY LIMIT #200 @4512 lot=0.01 (limit_single)
+entry["tickets"] = []
+entry["orders"] = [{#200, limit_single, price=4512}]
+
+<span class="cyan">Étape 2 — Prix descend à 4512 → limit remplit :</span>
+Phase 1: _resolve_order(#200) → rempli → position #200
+entry["tickets"] = [{#200, limit_single, entry=4512, be_active=False}]
+entry["orders"] = []
+
+<span class="cyan">Étape 3 — Prix monte à 4520 :</span>
+P&amp;L #200 = (4520-4512)&times;0.10 = +8.00$ &ge; PNL_TRIGGER
+→ BE déclenché (limit_single)
+→ open_count = 1 → SL @ entry = 4512
+→ target_gain = 15 &times; 1 = 15$
+===== | CH1-PU-S2 | BE | =====
+BUY XAUUSD | SL @4512.0 | 1 POS
+
+<span class="cyan">Étape 4 — Prix monte à 4527 :</span>
+P&amp;L #200 = (4527-4512)&times;0.10 = +15.00$ &ge; target_gain
+→ TP_FIXED
+===== | CH1-PU-S2 | TP-FIXED | =====
+BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
+#200</div>
+
+<h4>5.4.3 CAS 1 — Scénario A (limit non rempli)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
+<span class="muted">Prix actuel : 4076 (dans la zone)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → prix 4076 ∈ [4075-4080] → CAS 1
+→ MARKET SELL #100 @4076 lot=0.01 (market_cas1)
+→ SELL LIMIT #200 @4079 lot=0.01 (limit_cas1)
+entry["tickets"] = [{#100, market_cas1, entry=4076, be_active=False}]
+entry["orders"] = [{#200, limit_cas1, price=4079}]
+
+<span class="cyan">Étape 2 — Prix descend directement à 4068 :</span>
+Phase 1: _resolve_order(#200) → pas encore rempli (prix descend sans toucher 4079)
+Phase 3: _check_pnl_trigger()
+→ #100 profit = (4076-4068)&times;0.10 = +8.00$ &ge; PNL_TRIGGER → True
+
+_apply_be_on_open_positions() :
+→ _cancel_pending_orders_for_entry()
+  → mt5.orders_get(#200) → existe encore → annulé
+→ open_count = 1 → SL @ entry = 4076
+→ target_gain = 15 &times; 1 = 15$
+→ _be_activated = True
+===== | CH1-C1 | BE | =====
+SELL XAUUSD | SL @4076.0 | 1 POS
+
+<span class="cyan">Étape 3 — Prix descend à 4061 :</span>
+P&amp;L #100 = (4076-4061)&times;0.10 = +15.00$ &ge; target_gain
+→ TP_FIXED
+===== | CH1-C1 | TP-FIXED | =====
+SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
+#100</div>
+
+<h4>5.4.4 CAS 1 — Scénario B (limit rempli)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
+<span class="muted">Prix actuel : 4076 (dans la zone)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → prix 4076 ∈ [4075-4080] → CAS 1
+→ MARKET SELL #100 @4076 lot=0.01 (market_cas1)
+→ SELL LIMIT #200 @4079 lot=0.01 (limit_cas1)
+entry["tickets"] = [{#100, market_cas1, entry=4076, be_active=False}]
+entry["orders"] = [{#200, limit_cas1, price=4079}]
+
+<span class="cyan">Étape 2 — Prix monte à 4079 → limit remplit :</span>
+Phase 1: _resolve_order(#200) → rempli → position #201
+entry["tickets"] = [
+  {#100, market_cas1, entry=4076, be_active=False},
+  {#201, limit_cas1, entry=4079, be_active=False}
+]
+entry["orders"] = []
+
+<span class="cyan">Étape 3 — Prix descend à 4068 :</span>
+Phase 3: _check_pnl_trigger()
+→ #100 profit = (4076-4068)&times;0.10 = +8.00$
+→ #201 profit = (4079-4068)&times;0.10 = +11.00$
+→ min_profit = min(8$, 11$) = 8$ &ge; PNL_TRIGGER → True
+
+_apply_be_on_open_positions() :
+→ _cancel_pending_orders_for_entry() → aucun pending
+→ open_count = 2 → SL au médian
+→ médian = (4076+4079)/2 = 4077.5
+→ #100 SL @4077.5, #201 SL @4077.5
+→ target_gain = 15 &times; 2 = 30$
+→ _be_activated = True
+===== | CH1-C1 | BE | =====
+SELL XAUUSD | SL @4077.5 | 2 POS
+
+<span class="cyan">Étape 4 — Prix descend à 4063 :</span>
+P&amp;L #100 = (4076-4063)&times;0.10 = +13.00$
+P&amp;L #201 = (4079-4063)&times;0.10 = +16.00$
+Total = 29.00$ &lt; 30$ → continue
+
+<span class="cyan">Étape 5 — Prix descend à 4062 :</span>
+P&amp;L #100 = (4076-4062)&times;0.10 = +14.00$
+P&amp;L #201 = (4079-4062)&times;0.10 = +17.00$
+Total = 31.00$ &ge; 30$ → TP_FIXED
+===== | CH1-C1 | TP-FIXED | =====
+SELL XAUUSD | P&amp;L: +31.00$ | 2 POS
+#100, #201</div>
+
+<h4>5.4.5 CAS 2-a — Scénario A (limit non rempli)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
+<span class="muted">Prix actuel : 4082 (au-dessus de la zone)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → prix 4082 &gt; zone_high(4080) → CAS 2
+→ tp1(4054) &lt; current(4082) &lt; zone_low(4075)? Non
+→ zone_high(4080) &lt; current(4082) &lt; tp1(4054)? Non (4082 &gt; 4054 pour SELL)
+→ CAS 2-a : prix entre zone et TP1
+→ MARKET SELL #100 @4082 lot=0.01 (market_cas2)
+→ SELL LIMIT #200 @4077 lot=0.01 (limit_cas2)
+entry["tickets"] = [{#100, market_cas2, entry=4082, be_active=False}]
+entry["orders"] = [{#200, limit_cas2, price=4077}]
+
+<span class="cyan">Étape 2 — Prix descend directement à 4074 :</span>
+Phase 1: _resolve_order(#200) → pas rempli
+Phase 3: _check_pnl_trigger()
+→ #100 profit = (4082-4074)&times;0.10 = +8.00$ &ge; PNL_TRIGGER → True
+
+_apply_be_on_open_positions() :
+→ _cancel_pending_orders_for_entry() → #200 annulé
+→ open_count = 1 → SL @ entry = 4082
+→ target_gain = 15 &times; 1 = 15$
+===== | CH2-C2 | BE | =====
+SELL XAUUSD | SL @4082.0 | 1 POS
+
+<span class="cyan">Étape 3 — Prix descend à 4067 :</span>
+P&amp;L #100 = (4082-4067)&times;0.10 = +15.00$ &ge; target_gain
+→ TP_FIXED
+===== | CH2-C2 | TP-FIXED | =====
+SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
+#100</div>
+
+<h4>5.4.6 CAS 2-a — Scénario B (limit rempli)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
+<span class="muted">Prix actuel : 4082 (au-dessus de la zone)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → prix 4082 → CAS 2-a
+→ MARKET SELL #100 @4082 lot=0.01 (market_cas2)
+→ SELL LIMIT #200 @4077 lot=0.01 (limit_cas2)
+entry["tickets"] = [{#100, market_cas2, entry=4082, be_active=False}]
+entry["orders"] = [{#200, limit_cas2, price=4077}]
+
+<span class="cyan">Étape 2 — Prix descend à 4077 → limit remplit :</span>
+Phase 1: _resolve_order(#200) → rempli → position #201
+entry["tickets"] = [
+  {#100, market_cas2, entry=4082, be_active=False},
+  {#201, limit_cas2, entry=4077, be_active=False}
+]
+entry["orders"] = []
+
+<span class="cyan">Étape 3 — Prix descend à 4070 :</span>
+Phase 3: _check_pnl_trigger()
+→ #100 profit = (4082-4070)&times;0.10 = +12.00$
+→ #201 profit = (4077-4070)&times;0.10 = +7.00$
+→ min_profit = min(12$, 7$) = 7$ &lt; 8$ → False
+→ BE pas encore (limit est la pire position ici)
+
+<span class="cyan">Étape 4 — Prix descend à 4069 :</span>
+→ #100 profit = (4082-4069)&times;0.10 = +13.00$
+→ #201 profit = (4077-4069)&times;0.10 = +8.00$
+→ min_profit = 8$ &ge; PNL_TRIGGER → True
+
+_apply_be_on_open_positions() :
+→ open_count = 2 → SL au médian
+→ médian = (4082+4077)/2 = 4079.5
+→ #100 SL @4079.5, #201 SL @4079.5
+→ target_gain = 15 &times; 2 = 30$
+===== | CH2-C2 | BE | =====
+SELL XAUUSD | SL @4079.5 | 2 POS
+
+<span class="cyan">Étape 5 — Prix descend à 4063 :</span>
+P&amp;L #100 = (4082-4063)&times;0.10 = +19.00$
+P&amp;L #201 = (4077-4063)&times;0.10 = +14.00$
+Total = 33.00$ &ge; 30$ → TP_FIXED
+===== | CH2-C2 | TP-FIXED | =====
+SELL XAUUSD | P&amp;L: +33.00$ | 2 POS
+#100, #201</div>
+
+<h4>5.4.7 CAS 2-b — Scénario A (aucune limit rempli, TP_TRIGGER)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
+<span class="muted">Prix actuel : 4083 (loin de la zone)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → prix 4083 → CAS 2-b (prix entre TP1 et TP2)
+→ SELL LIMIT #200 @4075 lot=0.01 (limit_1)
+→ SELL LIMIT #201 @4080 lot=0.01 (limit_2)
+entry["tickets"] = []
+entry["orders"] = [{#200, limit_1, price=4075}, {#201, limit_2, price=4080}]
+
+<span class="cyan">Étape 2 — Prix monte à 4092 (TP_TRIGGER atteint) :</span>
+Phase 1: _resolve_order(#200) → pas rempli
+Phase 1: _resolve_order(#201) → pas rempli
+Phase 3: pas de tickets → pas de BE
+_check_pending_only_expiry():
+→ tp_trigger = tps[2] (3ème TP ou dernier)
+→ current(4092) &ge; tp_trigger → triggered
+→ _cancel_pending_orders_for_entry() → #200 et #201 annulés
+entry["orders"] = []
+entry["tickets"] = []
+→ Trade supprimé (aucun ticket, aucun order)
+===== | CH2-C2 | TP_TRIGGER | =====
+SELL XAUUSD | @4075, @4080 | 2 ordres annulés</div>
+
+<h4>5.4.8 CAS 2-b — Scénario B (limit_1 rempli)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
+<span class="muted">Prix actuel : 4083 (loin de la zone)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → CAS 2-b
+→ SELL LIMIT #200 @4075 lot=0.01 (limit_1)
+→ SELL LIMIT #201 @4080 lot=0.01 (limit_2)
+entry["tickets"] = []
+entry["orders"] = [{#200, limit_1, price=4075}, {#201, limit_2, price=4080}]
+
+<span class="cyan">Étape 2 — Prix monte à 4080 → limit_2 remplit, puis descend à 4075 → limit_1 remplit :</span>
+Phase 1: _resolve_order(#200) → rempli → position #300
+Phase 1: _resolve_order(#201) → pas encore rempli
+entry["tickets"] = [{#300, limit_1, entry=4075, be_active=False}]
+entry["orders"] = [{#201, limit_2, price=4080}]
+
+<span class="cyan">Étape 3 — Prix descend à 4067 :</span>
+Phase 3: _check_pnl_trigger()
+→ #300 profit = (4075-4067)&times;0.10 = +8.00$ &ge; PNL_TRIGGER → True
+
+_apply_be_on_open_positions() :
+→ _cancel_pending_orders_for_entry()
+  → mt5.orders_get(#201) → existe encore → annulé
+→ open_count = 1 → SL @ entry = 4075
+→ target_gain = 15 &times; 1 = 15$
 ===== | CH2-C2 | BE | =====
 SELL XAUUSD | SL @4075.0 | 1 POS
 
-<span class="cyan">Étape 2 :</span> Limit_2 @4080 annulé
-<span class="muted">target_gain = 15 &times; 1 = 15$</span>
-
-<span class="cyan">Étape 3 :</span> Prix descend à 4060 → P&amp;L = +15.00$ &ge; target_gain
+<span class="cyan">Étape 4 — Prix descend à 4060 :</span>
+P&amp;L #300 = (4075-4060)&times;0.10 = +15.00$ &ge; target_gain
+→ TP_FIXED
 ===== | CH2-C2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 #300</div>
 
-<h3>5.5 Exemple BE — CAS 2-b (2 positions)</h3>
+<h4>5.4.9 CAS 2-b — Scénario C (les deux limits remplies)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
-<span class="muted">Les deux limits remplies : #300 @4075, #301 @4080</span>
+<span class="muted">Prix actuel : 4083</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
 
-<span class="cyan">Étape 1 :</span> Prix descend à 4067 → P&amp;L #300 = +8.00$ &ge; PNL_TRIGGER
-<span class="muted">BE au médian = (4075+4080)/2 = 4077.5</span>
+<span class="cyan">Étape 1 — Exécution :</span>
+execute_signal() → CAS 2-b
+→ SELL LIMIT #200 @4075 lot=0.01 (limit_1)
+→ SELL LIMIT #201 @4080 lot=0.01 (limit_2)
+entry["tickets"] = []
+entry["orders"] = [{#200, limit_1, price=4075}, {#201, limit_2, price=4080}]
+
+<span class="cyan">Étape 2 — Prix monte à 4080 → limit_2 remplit :</span>
+Phase 1: _resolve_order(#201) → rempli → position #301
+entry["tickets"] = [{#301, limit_2, entry=4080, be_active=False}]
+entry["orders"] = [{#200, limit_1, price=4075}]
+
+<span class="cyan">Étape 3 — Prix descend à 4075 → limit_1 remplit :</span>
+Phase 1: _resolve_order(#200) → rempli → position #300
+entry["tickets"] = [
+  {#301, limit_2, entry=4080, be_active=False},
+  {#300, limit_1, entry=4075, be_active=False}
+]
+entry["orders"] = []
+
+<span class="cyan">Étape 4 — Prix descend à 4067 :</span>
+Phase 3: _check_pnl_trigger()
+→ #301 profit = (4080-4067)&times;0.10 = +13.00$
+→ #300 profit = (4075-4067)&times;0.10 = +8.00$
+→ min_profit = min(13$, 8$) = 8$ &ge; PNL_TRIGGER → True
+
+_apply_be_on_open_positions() :
+→ open_count = 2 → SL au médian
+→ médian = (4075+4080)/2 = 4077.5
+→ #300 SL @4077.5, #301 SL @4077.5
+→ target_gain = 15 &times; 2 = 30$
 ===== | CH2-C2 | BE | =====
 SELL XAUUSD | SL @4077.5 | 2 POS
 
-<span class="cyan">Étape 2 :</span> Prix descend à 4063
-<span class="muted">P&amp;L #300 = (4075-4063)&times;0.10 = +12.00$</span>
-<span class="muted">P&amp;L #301 = (4080-4063)&times;0.10 = +17.00$</span>
-<span class="muted">Total = 29.00$ &lt; 30$ → continue</span>
-
-<span class="cyan">Étape 3 :</span> Prix descend à 4062 → Total = 30.00$ &ge; target_gain
-<span class="muted">P&amp;L #300 = (4075-4062)&times;0.10 = +13.00$</span>
-<span class="muted">P&amp;L #301 = (4080-4062)&times;0.10 = +18.00$</span>
-<span class="muted">Total = 31.00$</span>
+<span class="cyan">Étape 5 — Prix descend à 4062 :</span>
+P&amp;L #300 = (4075-4062)&times;0.10 = +13.00$
+P&amp;L #301 = (4080-4062)&times;0.10 = +18.00$
+Total = 31.00$ &ge; 30$ → TP_FIXED
 ===== | CH2-C2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +31.00$ | 2 POS
 #300, #301</div>
 
-<h3>5.6 Exemple BE — CAS 1 (2 positions)</h3>
-<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
-<span class="muted">MKT #100 @4077, LIMIT #101 @4082.5 rempli</span>
+<h4>5.4.10 Quick Alert seul (même logique que Prix Unique)</h4>
+<div class="signal-box"><span class="muted">Signal :</span> Quick Alert BUY 4512
+<span class="muted">Prix actuel : 4510 (entre SL et entry)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
 
-<span class="cyan">Étape 1 :</span> Prix descend à 4069 → P&amp;L #100 = +8.00$ &ge; PNL_TRIGGER
-<span class="muted">BE au médian = (4077+4082.5)/2 = 4079.75</span>
-===== | CH2-C1 | BE | =====
-SELL XAUUSD | SL @4079.75 | 2 POS
+<span class="cyan">Étape 1 — Exécution :</span>
+Quick Alert → prix 4510 &lt; 4512 → MARKET
+→ MARKET BUY #400 @4510 lot=0.01 (quick_market)
+→ SL=4502, TP=4527 (généré auto)
+entry["tickets"] = [{#400, quick_market, entry=4510, be_active=False}]
 
-<span class="cyan">Étape 2 :</span> Prix descend à 4063 → Total = 33.50$ &ge; 30$
-===== | CH2-C1 | TP-FIXED | =====
-SELL XAUUSD | P&amp;L: +33.50$ | 2 POS
-#100, #101</div>
+<span class="cyan">Étape 2 — Prix monte à 4518 :</span>
+P&amp;L #400 = (4518-4510)&times;0.10 = +8.00$ &ge; PNL_TRIGGER
+→ BE déclenché (quick_market)
+→ open_count = 1 → SL @ entry = 4510
+→ target_gain = 15 &times; 1 = 15$
+===== | CH6-QA | BE | =====
+BUY XAUUSD | SL @4510.0 | 1 POS
+
+<span class="cyan">Étape 3 — Prix monte à 4525 :</span>
+P&amp;L #400 = (4525-4510)&times;0.10 = +15.00$ &ge; target_gain
+→ TP_FIXED
+===== | CH6-QA | TP-FIXED | =====
+BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
+#400</div>
+
+<h4>5.4.11 Quick Alert + Fusion (même logique que CAS 1/2-a/2-b)</h4>
+<div class="signal-box"><span class="muted">Quick Alert :</span> BUY 4512 → MARKET #400 @4511 (quick_market)
+<span class="muted">Signal complet reçu après :</span> BUY zone 4510-4515, TPf=4530
+<span class="muted">Prix actuel : 4511 (dans la zone)</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+
+<span class="cyan">Étape 1 — Fusion :</span>
+Signal complet reçu → zone [4510-4515] contient entry QA(4511)
+→ merge_quick_alert()
+→ MARKET #400 déjà ouvert (quick_market)
+→ SELL LIMIT #401 @4513 lot=0.01 (merge_limit)
+entry["tickets"] = [{#400, quick_market, entry=4511, be_active=False}]
+entry["orders"] = [{#401, merge_limit, price=4513}]
+
+<span class="cyan">Étape 2 — Prix monte à 4513 → limit remplit :</span>
+Phase 1: _resolve_order(#401) → rempli → position #402
+entry["tickets"] = [
+  {#400, quick_market, entry=4511, be_active=False},
+  {#402, merge_limit, entry=4513, be_active=False}
+]
+entry["orders"] = []
+
+<span class="cyan">Étape 3 — Prix monte à 4519 :</span>
+P&amp;L #400 = (4519-4511)&times;0.10 = +8.00$
+P&amp;L #402 = (4519-4513)&times;0.10 = +6.00$
+min_profit = min(8$, 6$) = 6$ &lt; 8$ → False
+
+<span class="cyan">Étape 4 — Prix monte à 4521 :</span>
+P&amp;L #400 = (4521-4511)&times;0.10 = +10.00$
+P&amp;L #402 = (4521-4513)&times;0.10 = +8.00$
+min_profit = 8$ &ge; PNL_TRIGGER → True
+
+_apply_be_on_open_positions() :
+→ open_count = 2 → SL au médian
+→ médian = (4511+4513)/2 = 4512
+→ #400 SL @4512, #402 SL @4512
+→ target_gain = 15 &times; 2 = 30$
+===== | CH6-QA-F | BE | =====
+BUY XAUUSD | SL @4512.0 | 2 POS
+
+<span class="cyan">Étape 5 — Prix monte à 4527 :</span>
+P&amp;L #400 = (4527-4511)&times;0.10 = +16.00$
+P&amp;L #402 = (4527-4513)&times;0.10 = +14.00$
+Total = 30.00$ &ge; 30$ → TP_FIXED
+===== | CH6-QA-F | TP-FIXED | =====
+BUY XAUUSD | P&amp;L: +30.00$ | 2 POS
+#400, #402</div>
+
 </section>
 
 <!-- ============================================================ -->

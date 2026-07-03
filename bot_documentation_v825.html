@@ -60,7 +60,7 @@ footer{text-align:center;color:var(--text-muted);font-size:0.8rem;padding:2rem 0
 <p class="subtitle">Bot de Copy Trading Telegram &rarr; MetaTrader 5</p>
 <span class="version">V8.2.5</span>
 <span class="version-new">Signal Parser V7.4.14</span>
-<p style="margin-top:1rem;color:var(--text-muted);font-size:0.9rem">SL Configurable &bull; BE Whitelist &bull; TP_FIXED &bull; Fusion QA &bull; 17 Formats de Log</p>
+<p style="margin-top:1rem;color:var(--text-muted);font-size:0.9rem">SL Configurable &bull; BE Whitelist &bull; Gain fixe par position &bull; Fusion QA &bull; 17 Formats de Log</p>
 </div>
 
 <div class="toc">
@@ -70,7 +70,7 @@ footer{text-align:center;color:var(--text-muted);font-size:0.8rem;padding:2rem 0
 <li><a href="#parser">Signal Parser V7.4.14</a></li>
 <li><a href="#signals">Formats de signaux acceptés</a></li>
 <li><a href="#execution">Cas d'exécution des ordres</a></li>
-<li><a href="#be-tpfixed">Gestion BE + TP_FIXED</a></li>
+<li><a href="#be-tpfixed">Gestion BE + Gain fixe</a></li>
 <li><a href="#quick-alert">Quick Alert + Fusion</a></li>
 <li><a href="#tp-trigger">TP_TRIGGER</a></li>
 <li><a href="#daily-pnl">P&amp;L Quotidien</a></li>
@@ -94,7 +94,7 @@ footer{text-align:center;color:var(--text-muted);font-size:0.8rem;padding:2rem 0
 <li>Parse le signal (direction, entry, zone, TPs, SL)</li>
 <li>Valide (spread, SL, conflit, horaire, news, max positions, P&amp;L quotidien)</li>
 <li>Exécute l'ordre sur MetaTrader 5 (market ou limit)</li>
-<li>Gère le BE (Break Even) et le TP_FIXED (fermeture manuelle)</li>
+<li>Gère le BE (Break Even) et le gain fixe par position (fermeture manuelle)</li>
 <li>Limite le P&amp;L quotidien</li>
 </ol>
 
@@ -106,7 +106,7 @@ footer{text-align:center;color:var(--text-muted);font-size:0.8rem;padding:2rem 0
  &darr;
 <span class="green">MT5Bridge</span> &rarr; place_market_order / place_limit_order
  &darr;
-<span class="purple">TradeManager</span> &rarr; BE + TP_FIXED + P&amp;L quotidien (poll 1s)
+<span class="purple">TradeManager</span> &rarr; BE + Gain fixe + P&amp;L quotidien (poll 1s)
  &darr;
 <span class="orange">Alertes Telegram</span> &rarr; notifications de chaque événement</div>
 
@@ -123,7 +123,7 @@ footer{text-align:center;color:var(--text-muted);font-size:0.8rem;padding:2rem 0
 <table>
 <tr><th>Classe</th><th>Rôle</th></tr>
 <tr><td><code>MT5Bridge</code></td><td>Wrapper MT5 : connexion, ordres, modification SL/TP, fermeture, résolution symbole</td></tr>
-<tr><td><code>TradeManager</code></td><td>Boucle async (1s) : détecte les fills, BE, TP_FIXED, P&amp;L quotidien</td></tr>
+<tr><td><code>TradeManager</code></td><td>Boucle async (1s) : détecte les fills, BE, gain fixe, P&amp;L quotidien</td></tr>
 <tr><td><code>NewsManager</code></td><td>Fetch ForexFactory, bloque signaux avant news HIGH impact</td></tr>
 <tr><td><code>PerformanceTracker</code></td><td>Suivi WIN/LOSS/BE, résumé de session</td></tr>
 <tr><td><code>SignalParser</code></td><td>Parse texte Telegram &rarr; TradeSignal structuré</td></tr>
@@ -293,10 +293,10 @@ SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4070.0 | TPf: 4054.0 SL: 4090.0
 </section>
 
 <!-- ============================================================ -->
-<!-- 5. BE + TP_FIXED -->
+<!-- 5. BE + Gain fixe par position -->
 <!-- ============================================================ -->
 <section id="be-tpfixed">
-<h2>5. Gestion BE + TP_FIXED</h2>
+<h2>5. Gestion BE + Gain fixe par position</h2>
 
 <h3>5.1 Fonctionnement général</h3>
 <div class="flow"><span class="muted">Signal exécuté</span> &rarr; positions ouvertes
@@ -313,7 +313,7 @@ SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4070.0 | TPf: 4054.0 SL: 4090.0
  &#x2514;&#x2500; <span class="red">NON</span> &rarr; continuer
  &darr;
 <span class="green">total_pnl &ge; target_gain ?</span>
- &#x251c;&#x2500; <span class="green">OUI</span> &rarr; <span class="badge badge-purple">TP_FIXED</span> &rarr; fermer manuellement toutes les positions
+ &#x251c;&#x2500; <span class="green">OUI</span> &rarr; <span class="badge badge-purple">FERMETURE MANUELLE</span> &rarr; fermer manuellement toutes les positions
  &#x2514;&#x2500; <span class="red">NON</span> &rarr; continuer (broker TP peut fermer en premier)</div>
 
 <h3>5.2 Rôles déclencheurs du BE</h3>
@@ -357,7 +357,7 @@ SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4070.0 | TPf: 4054.0 SL: 4090.0
 <h4>5.4.1 Prix Unique S1 (Market)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> BUY XAUUSD @4512, TPf=4527, SL=4502
 <span class="muted">Prix actuel : 4508 (entre SL et entry)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → prix 4508 &lt; 4512 → Scénario 1
@@ -375,7 +375,7 @@ BUY XAUUSD | SL @4508.0 | 1 POS
 
 <span class="cyan">Étape 3 — Prix monte à 4523 :</span>
 P&amp;L #100 = (4523-4508)&times;0.10 = +15.00$ &ge; target_gain
-→ TP_FIXED → fermeture manuelle
+→ Gain fixe atteint → fermeture manuelle
 ===== | CH1-PU-S1 | TP-FIXED | =====
 BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
 #100</div>
@@ -383,7 +383,7 @@ BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
 <h4>5.4.2 Prix Unique S2 (Limit)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> BUY XAUUSD @4512, TPf=4527, SL=4502
 <span class="muted">Prix actuel : 4515 (au-dessus de entry)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → prix 4515 &gt; 4512 → Scénario 2
@@ -406,7 +406,7 @@ BUY XAUUSD | SL @4512.0 | 1 POS
 
 <span class="cyan">Étape 4 — Prix monte à 4527 :</span>
 P&amp;L #200 = (4527-4512)&times;0.10 = +15.00$ &ge; target_gain
-→ TP_FIXED
+→ Gain fixe atteint
 ===== | CH1-PU-S2 | TP-FIXED | =====
 BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
 #200</div>
@@ -414,7 +414,7 @@ BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
 <h4>5.4.3 CAS 1 — Scénario A (limit non rempli)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
 <span class="muted">Prix actuel : 4076 (dans la zone)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → prix 4076 ∈ [4075-4080] → CAS 1
@@ -439,7 +439,7 @@ SELL XAUUSD | SL @4076.0 | 1 POS
 
 <span class="cyan">Étape 3 — Prix descend à 4061 :</span>
 P&amp;L #100 = (4076-4061)&times;0.10 = +15.00$ &ge; target_gain
-→ TP_FIXED
+→ Gain fixe atteint
 ===== | CH1-C1 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 #100</div>
@@ -447,7 +447,7 @@ SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 <h4>5.4.4 CAS 1 — Scénario B (limit rempli)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
 <span class="muted">Prix actuel : 4076 (dans la zone)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → prix 4076 ∈ [4075-4080] → CAS 1
@@ -488,7 +488,7 @@ Total = 29.00$ &lt; 30$ → continue
 <span class="cyan">Étape 5 — Prix descend à 4062 :</span>
 P&amp;L #100 = (4076-4062)&times;0.10 = +14.00$
 P&amp;L #201 = (4079-4062)&times;0.10 = +17.00$
-Total = 31.00$ &ge; 30$ → TP_FIXED
+Total = 31.00$ &ge; 30$ → Gain fixe atteint
 ===== | CH1-C1 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +31.00$ | 2 POS
 #100, #201</div>
@@ -496,7 +496,7 @@ SELL XAUUSD | P&amp;L: +31.00$ | 2 POS
 <h4>5.4.5 CAS 2-a — Scénario A (limit non rempli)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
 <span class="muted">Prix actuel : 4082 (au-dessus de la zone)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → prix 4082 &gt; zone_high(4080) → CAS 2
@@ -522,7 +522,7 @@ SELL XAUUSD | SL @4082.0 | 1 POS
 
 <span class="cyan">Étape 3 — Prix descend à 4067 :</span>
 P&amp;L #100 = (4082-4067)&times;0.10 = +15.00$ &ge; target_gain
-→ TP_FIXED
+→ Gain fixe atteint
 ===== | CH2-C2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 #100</div>
@@ -530,7 +530,7 @@ SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 <h4>5.4.6 CAS 2-a — Scénario B (limit rempli)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
 <span class="muted">Prix actuel : 4082 (au-dessus de la zone)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → prix 4082 → CAS 2-a
@@ -570,7 +570,7 @@ SELL XAUUSD | SL @4079.5 | 2 POS
 <span class="cyan">Étape 5 — Prix descend à 4063 :</span>
 P&amp;L #100 = (4082-4063)&times;0.10 = +19.00$
 P&amp;L #201 = (4077-4063)&times;0.10 = +14.00$
-Total = 33.00$ &ge; 30$ → TP_FIXED
+Total = 33.00$ &ge; 30$ → Gain fixe atteint
 ===== | CH2-C2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +33.00$ | 2 POS
 #100, #201</div>
@@ -578,7 +578,7 @@ SELL XAUUSD | P&amp;L: +33.00$ | 2 POS
 <h4>5.4.7 CAS 2-b — Scénario A (aucune limit rempli, TP_TRIGGER)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
 <span class="muted">Prix actuel : 4083 (loin de la zone)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → prix 4083 → CAS 2-b (prix entre TP1 et TP2)
@@ -604,7 +604,7 @@ SELL XAUUSD | @4075, @4080 | 2 ordres annulés</div>
 <h4>5.4.8 CAS 2-b — Scénario B (limit_1 rempli)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
 <span class="muted">Prix actuel : 4083 (loin de la zone)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → CAS 2-b
@@ -633,7 +633,7 @@ SELL XAUUSD | SL @4075.0 | 1 POS
 
 <span class="cyan">Étape 4 — Prix descend à 4060 :</span>
 P&amp;L #300 = (4075-4060)&times;0.10 = +15.00$ &ge; target_gain
-→ TP_FIXED
+→ Gain fixe atteint
 ===== | CH2-C2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 #300</div>
@@ -641,7 +641,7 @@ SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 <h4>5.4.9 CAS 2-b — Scénario C (les deux limits remplies)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
 <span class="muted">Prix actuel : 4083</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 execute_signal() → CAS 2-b
@@ -680,7 +680,7 @@ SELL XAUUSD | SL @4077.5 | 2 POS
 <span class="cyan">Étape 5 — Prix descend à 4062 :</span>
 P&amp;L #300 = (4075-4062)&times;0.10 = +13.00$
 P&amp;L #301 = (4080-4062)&times;0.10 = +18.00$
-Total = 31.00$ &ge; 30$ → TP_FIXED
+Total = 31.00$ &ge; 30$ → Gain fixe atteint
 ===== | CH2-C2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +31.00$ | 2 POS
 #300, #301</div>
@@ -688,7 +688,7 @@ SELL XAUUSD | P&amp;L: +31.00$ | 2 POS
 <h4>5.4.10 Quick Alert seul (même logique que Prix Unique)</h4>
 <div class="signal-box"><span class="muted">Signal :</span> Quick Alert BUY 4512
 <span class="muted">Prix actuel : 4510 (entre SL et entry)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
 Quick Alert → prix 4510 &lt; 4512 → MARKET
@@ -706,7 +706,7 @@ BUY XAUUSD | SL @4510.0 | 1 POS
 
 <span class="cyan">Étape 3 — Prix monte à 4525 :</span>
 P&amp;L #400 = (4525-4510)&times;0.10 = +15.00$ &ge; target_gain
-→ TP_FIXED
+→ Gain fixe atteint
 ===== | CH6-QA | TP-FIXED | =====
 BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
 #400</div>
@@ -715,7 +715,7 @@ BUY XAUUSD | P&amp;L: +15.00$ | 1 POS
 <div class="signal-box"><span class="muted">Quick Alert :</span> BUY 4512 → MARKET #400 @4511 (quick_market)
 <span class="muted">Signal complet reçu après :</span> BUY zone 4510-4515, TPf=4530
 <span class="muted">Prix actuel : 4511 (dans la zone)</span>
-<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN : 15$</span>
+<span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Fusion :</span>
 Signal complet reçu → zone [4510-4515] contient entry QA(4511)
@@ -754,7 +754,7 @@ BUY XAUUSD | SL @4512.0 | 2 POS
 <span class="cyan">Étape 5 — Prix monte à 4527 :</span>
 P&amp;L #400 = (4527-4511)&times;0.10 = +16.00$
 P&amp;L #402 = (4527-4513)&times;0.10 = +14.00$
-Total = 30.00$ &ge; 30$ → TP_FIXED
+Total = 30.00$ &ge; 30$ → Gain fixe atteint
 ===== | CH6-QA-F | TP-FIXED | =====
 BUY XAUUSD | P&amp;L: +30.00$ | 2 POS
 #400, #402</div>
@@ -929,7 +929,7 @@ Ordres annulés : 3
 <div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH6-PU-S1 | BE | =====</span>
 <span class="header">[INFO]</span> <span class="green">SELL XAUUSD | SL @4061.11 | 1 POS</span></div>
 
-<h4>TP_FIXED</h4>
+<h4>Gain fixe atteint</h4>
 <div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2 | TP-FIXED | =====</span>
 <span class="header">[INFO]</span> <span class="purple">SELL XAUUSD | P&amp;L: +30.00$ | 2 POS</span>
 <span class="header">[INFO]</span> <span class="purple">#300, #301</span></div>
@@ -993,7 +993,7 @@ SL : 4075.00
 Gain cible (close manuel) : 15.00$
 Canal: XAUUSD DAILY SIGNAL</div>
 
-<h3>10.4 TP_FIXED</h3>
+<h3>10.4 Fermeture par objectif de gain</h3>
 <div class="signal-box">&#x1f3af; SELL XAUUSD | TP FIXED
 ━━━━━━━━━━━━━━━━━━
 P&amp;L total: +30.00$
@@ -1095,7 +1095,7 @@ Ordres annulés : 3
 <tr><td><code>CH1-MG</code></td><td>Canal 1, Merge (signal complet)</td></tr>
 <tr><td><code>DAILY-LIMIT-CLOSE</code></td><td>Fermeture par limite P&amp;L quotidien</td></tr>
 <tr><td><code>close-all</code></td><td>Fermeture manuelle (signal CLOSE)</td></tr>
-<tr><td><code>TP-FIXED</code></td><td>Fermeture manuelle par TP_FIXED</td></tr>
+<tr><td><code>TP-FIXED</code></td><td>Fermeture manuelle par objectif de gain (TP_FIXED_GAIN_USD)</td></tr>
 <tr><td><code>[BE ...]</code></td><td>Modification SL pour Break Even</td></tr>
 </table>
 </section>
@@ -1122,7 +1122,7 @@ Ordres annulés : 3
 <tr><td>6</td><td><strong>Heartbeat</strong> messages toutes les 10 min avec erreurs timeout</td><td><span class="badge badge-orange">Spam logs</span></td><td>Désactivation complète</td></tr>
 <tr><td>7</td><td><strong>Alertes Telegram</strong> timeout 5s trop court</td><td><span class="badge badge-orange">Messages perdus</span></td><td>Timeout 15s + gestion TimeoutError</td></tr>
 <tr><td>8</td><td><strong>Logs bruts</strong> avec ** et emojis en INFO</td><td><span class="badge badge-orange">Illisible</span></td><td>Message brut en DEBUG, signal parsé en INFO</td></tr>
-<tr><td>9</td><td><strong>Entry non retirée</strong> après TP_FIXED</td><td><span class="badge orange">Cycle inutile</span></td><td>Retrait immédiat de self.active</td></tr>
+<tr><td>9</td><td><strong>Entry non retirée</strong> après fermeture manuelle</td><td><span class="badge orange">Cycle inutile</span></td><td>Retrait immédiat de self.active</td></tr>
 <tr><td>10</td><td><strong>CAS 2-b par élimination</strong> (logique fragile)</td><td><span class="badge badge-orange">Confusion</span></td><td>Vérification explicite (tp2 &lt; current &lt; tp1)</td></tr>
 </table>
 
@@ -1143,7 +1143,7 @@ Ordres annulés : 3
 <table>
 <tr><th>Fonctionnalité</th><th>v8.2.4</th><th>v8.2.5</th></tr>
 <tr><td>BE</td><td>modify_sl seul, whitelist incomplète</td><td><span class="badge badge-green">SL seul, TP inchangé, whitelist complète</span></td></tr>
-<tr><td>TP_FIXED</td><td>target_gain en points (mélange unités)</td><td><span class="badge badge-green">target_gain = TP_FIXED_GAIN &times; N, fermeture manuelle</span></td></tr>
+<tr><td>Gain fixe par position</td><td>target_gain en points (mélange unités)</td><td><span class="badge badge-green">target_gain = TP_FIXED_GAIN_USD &times; N, fermeture manuelle</span></td></tr>
 <tr><td>TP_TRIGGER</td><td>Ignoré si position ouverte</td><td><span class="badge badge-green">Annule pending même avec position</span></td></tr>
 <tr><td>Fusion QA</td><td>Stubs (pass)</td><td><span class="badge badge-green">Implémentation complète depuis v7</span></td></tr>
 <tr><td>CAS 2-b</td><td>Par élimination</td><td><span class="badge badge-green">Condition explicite (tp2 &lt; current &lt; tp1)</span></td></tr>

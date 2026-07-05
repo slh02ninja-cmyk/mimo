@@ -6,7 +6,7 @@
 
 ---
 
-## 🔴 Bugs corrigés (5)
+## 🔴 Bugs corrigés (6)
 
 ### 1. Race condition dans `_cancel_pending_orders_for_entry`
 **Problème :** Le BE annule les pending orders, mais un limit peut se remplir entre le `mt5.orders_get()` et le `bridge.cancel_order()`. Le fill n'est détecté qu'au cycle suivant → le limit reste sans protection BE pendant 1 seconde.
@@ -27,6 +27,10 @@
 ### 5. Alerte BE LATE sans info sur le changement de target_gain
 **Problème :** Quand le limit remplit après BE, le target_gain passe de `TP_FIXED_GAIN_USD × 1` à `TP_FIXED_GAIN_USD × 2` sans notification. Le trader ne sait pas que l'objectif a changé.
 **Fix :** L'alerte Telegram BE LATE inclut maintenant l'ancien et le nouveau objectif de gain.
+
+### 6. Fusion QA incomplète — limit rempli non géré
+**Problème :** Quand un Quick Alert limit est déjà rempli au moment du merge, v9 appelait `modify_pending_order` sur un ordre qui n'existe plus.
+**Fix :** Vérification `manager._resolve_order()` → si rempli, créer un ticket avec rôle `quick_limit_filled` + modifier SL/TP sur la position + placer merge limit.
 
 ---
 

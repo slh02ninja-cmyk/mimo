@@ -8,6 +8,7 @@
  - FIX #3 : TP_TRIGGER nettoyage immédiat de self.active
  - FIX #4 : SL_MOVE met à jour les ordres pending
  - FIX #5 : Alerte BE LATE avec ancien/nouveau target_gain
+ - FIX #6 : Fusion QA — limit rempli non géré (_resolve_order + quick_limit_filled)
 =============================================================
 """
 
@@ -2275,7 +2276,38 @@ def merge_quick_alert(qa: dict, key: str, full_signal: dict,
         entry["signal"]           = full_signal
         entry["_is_quick_alert"]  = False
     else:
-        if qa_is_limit:
+        # Vérifier si le limit QA a été rempli entre-temps
+        resolved_pos = manager._resolve_order(qa_ticket, full_signal["symbol"])
+        if resolved_pos:
+            # ★ Limit déjà rempli → créer ticket + modifier SL/TP sur la position
+            log.info(f"MERGE: LIMIT #{qa_ticket} rempli → SL/TP + LIMIT")
+            if len(full_signal["tps"]) == 1:
+                tp_trigger_idx = 0
+            else:
+                tp_trigger_idx = 2 if 3 <= len(full_signal["tps"]) else len(full_signal["tps"]) - 1
+            tk = {
+                "ticket":       resolved_pos.ticket,
+                "lot":          qa["entry"]["orders"][0]["lot"] if qa["entry"]["orders"] else LOT_UNIQUE_TRADE,
+                "role":         "quick_limit_filled",
+                "entry_price":  resolved_pos.price_open,
+                "tp_index":     tp_trigger_idx,
+                "tp_target":    full_signal["tps"][tp_trigger_idx] if len(full_signal["tps"]) > tp_trigger_idx else tp_final,
+                "tp3":          full_signal["tps"][tp_trigger_idx] if len(full_signal["tps"]) > tp_trigger_idx else tp_final,
+                "tp_final":     tp_final,
+                "sl_step":      0,
+                "trail_active": False,
+                "be_active":    False,
+                "be_sl":        0,
+            }
+            entry["tickets"].append(tk)
+            entry["orders"] = [o for o in entry["orders"] if o["order"] != qa_ticket]
+            bridge.modify_sl_tp(resolved_pos.ticket, real_sl, tp_final, "[MERGE-SL-TP]")
+            _place_merge_limit(full_signal, bridge, entry, real_sl, tp_final)
+            entry["signal"]          = full_signal
+            entry["_is_quick_alert"] = False
+        else:
+            # ★ Limit encore pending → modifier l'ordre pending
+            log.info(f"MERGE: LIMIT #{qa_ticket} pending → modif SL/TP + LIMIT")
             if len(full_signal["tps"]) == 1:
                 tp_trigger_idx = 0
             else:

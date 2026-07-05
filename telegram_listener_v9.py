@@ -1,13 +1,13 @@
 """
 =============================================================
  TELEGRAM → MT5 | Bot Trading
- Version 8.2.4 — SL CONFIGURABLE + BE WHITELIST + QUICK ALERT FIX
- MODIFICATIONS :
- - SL_PRIX_UNIQUE et SL_PLUS_PROCHE lus depuis .env
- - Prix unique : SL limité à SL_PRIX_UNIQUE
- - Signaux avec zone : SL ajusté pour que la position la plus proche soit à SL_PLUS_PROCHE
- - BE déclenché uniquement par les rôles whitelistés
- - Quick Alert utilise le TP/SL généré par le parser
+ Version 9.0.0 — BUG FIXES SESSION (5 bugs corrigés)
+ MODIFICATIONS v9.0.0 :
+ - FIX #1 : Race condition dans _cancel_pending_orders_for_entry (cancel échoué → résolution immédiate)
+ - FIX #2 : BE LATE — protection des limits remplis après le BE initial
+ - FIX #3 : TP_TRIGGER nettoyage immédiat de self.active
+ - FIX #4 : SL_MOVE met à jour les ordres pending
+ - FIX #5 : Alerte BE LATE avec ancien/nouveau target_gain
 =============================================================
 """
 
@@ -2539,7 +2539,7 @@ async def main():
         # Banner
         mode = "🧪 DEMO" if DEMO_MODE else "💰 LIVE"
         log.info("=" * 55)
-        log.info(f" TRADINGBOT V8.2.4 — SL CONFIGURABLE + BE WHITELIST")
+        log.info(f" TRADINGBOT V9.0.0 — 5 BUG FIXES")
         log.info(f" Mode: {mode}")
         log.info(f" Canaux surveillés : {len(chats)}")
         for env_name, ch_value in channel_names:

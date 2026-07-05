@@ -273,7 +273,7 @@ SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4077.0 | TPf: 4054.0 SL: 4090.0
 <span class="muted">other_limit = zone_low = 3330</span>
 
 <span class="cyan">Résultat :</span>
-===== | CH2-C2 | =====
+===== | CH2-C2-S1 | =====
 BUY XAUUSD | Zone: 3330.0-3335.0 | Prix: 3340.0 | TPf: 3360.0 SL: 3320.0
   MKT #200 @3340.0 lot0.01 | LIMIT_2 #201 @3330.0 lot0.01</div>
 
@@ -288,16 +288,16 @@ BUY XAUUSD | Zone: 3330.0-3335.0 | Prix: 3340.0 | TPf: 3360.0 SL: 3320.0
 <span class="muted">Prix actuel :</span> 4070 (entre TP2=4069 et TP1=4072)
 
 <span class="cyan">Résultat :</span>
-===== | CH2-C2 | =====
+===== | CH2-C2-S2 | =====
 SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4070.0 | TPf: 4054.0 SL: 4090.0
   LIMIT_1 #300 @4075.0 lot0.01 | LIMIT_2 #301 @4080.0 lot0.01</div>
 
 <h3>4.5 Conditions CAS 2 (résumé)</h3>
 <table>
-<tr><th>CAS</th><th>Condition SELL</th><th>Condition BUY</th><th>Action</th></tr>
-<tr><td><span class="badge badge-green">CAS 2-a</span></td><td><code>tp1 &lt; current &lt; zone_low</code></td><td><code>zone_high &lt; current &lt; tp1</code></td><td>MARKET + LIMIT</td></tr>
-<tr><td><span class="badge badge-orange">CAS 2-b</span></td><td><code>tp2 &lt; current &lt; tp1</code></td><td><code>tp1 &lt; current &lt; tp2</code></td><td>2 &times; LIMIT</td></tr>
-<tr><td><span class="badge badge-red">Hors zone</span></td><td><code>current &lt; tp2</code> ou <code>current &gt; zone_high</code></td><td><code>current &gt; tp2</code> ou <code>current &lt; zone_low</code></td><td>ANNULé</td></tr>
+<tr><th>CAS</th><th>Condition SELL</th><th>Condition BUY</th><th>Action</th><th>Comment MT5</th></tr>
+<tr><td><span class="badge badge-green">CAS 2-a</span></td><td><code>tp1 &lt; current &lt; zone_low</code></td><td><code>zone_high &lt; current &lt; tp1</code></td><td>MARKET + LIMIT</td><td><code>CH{x}-C2-S1</code></td></tr>
+<tr><td><span class="badge badge-orange">CAS 2-b</span></td><td><code>tp2 &lt; current &lt; tp1</code></td><td><code>tp1 &lt; current &lt; tp2</code></td><td>2 &times; LIMIT</td><td><code>CH{x}-C2-S2</code></td></tr>
+<tr><td><span class="badge badge-red">Hors zone</span></td><td><code>current &lt; tp2</code> ou <code>current &gt; zone_high</code></td><td><code>current &gt; tp2</code> ou <code>current &lt; zone_low</code></td><td>ANNULé</td><td>—</td></tr>
 </table>
 
 <div class="highlight warn"><strong>Note CAS 2-a :</strong> Nécessite au moins 2 TPs avec tp1 proche de la zone. Si le signal n'a qu'un seul TP (tp1 loin de la zone), le prix sera toujours "hors zone" et le signal sera annulé.</div>
@@ -626,13 +626,13 @@ _apply_be_on_open_positions() :
 → _cancel_pending_orders_for_entry() → #200 annulé
 → open_count = 1 → SL @ entry = 4073
 → target_gain = 15 &times; 1 = 15$
-===== | CH2-C2 | BE | =====
+===== | CH2-C2-S1 | BE | =====
 SELL XAUUSD | SL @4073.0 | 1 POS
 
 <span class="cyan">Étape 3 — Prix descend à 4058 :</span>
 P&amp;L #100 = (4073-4058)&times;0.10 = +15.00$ &ge; target_gain
 → Gain fixe atteint
-===== | CH2-C2 | TP-FIXED | =====
+===== | CH2-C2-S1 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 #100</div>
 
@@ -673,14 +673,14 @@ _apply_be_on_open_positions() :
 → médian = (4073+4077)/2 = 4075
 → #100 SL @4075, #201 SL @4075
 → target_gain = 15 &times; 2 = 30$
-===== | CH2-C2 | BE | =====
+===== | CH2-C2-S1 | BE | =====
 SELL XAUUSD | SL @4075.0 | 2 POS
 
 <span class="cyan">Étape 5 — Prix descend à 4060 :</span>
 P&amp;L #100 = (4073-4060)&times;0.10 = +13.00$
 P&amp;L #201 = (4077-4060)&times;0.10 = +17.00$
 Total = 30.00$ &ge; 30$ → Gain fixe atteint
-===== | CH2-C2 | TP-FIXED | =====
+===== | CH2-C2-S1 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +30.00$ | 2 POS
 #100, #201</div>
 
@@ -708,7 +708,7 @@ _check_pending_only_expiry():
 entry["orders"] = []
 entry["tickets"] = []
 → Trade supprimé (aucun ticket, aucun order)
-===== | CH2-C2 | TP_TRIGGER | =====
+===== | CH2-C2-S2 | TP_TRIGGER | =====
 SELL XAUUSD | @4075, @4080 | 2 ordres annulés</div>
 
 <h4>5.4.8 CAS 2-b — Scénario B (limit_1 rempli) — 3 TPs</h4>
@@ -739,13 +739,13 @@ _apply_be_on_open_positions() :
   → mt5.orders_get(#201) → existe encore → annulé
 → open_count = 1 → SL @ entry = 4075
 → target_gain = 15 &times; 1 = 15$
-===== | CH2-C2 | BE | =====
+===== | CH2-C2-S2 | BE | =====
 SELL XAUUSD | SL @4075.0 | 1 POS
 
 <span class="cyan">Étape 4 — Prix descend à 4060 :</span>
 P&amp;L #300 = (4075-4060)&times;0.10 = +15.00$ &ge; target_gain
 → Gain fixe atteint
-===== | CH2-C2 | TP-FIXED | =====
+===== | CH2-C2-S2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 #300</div>
 
@@ -786,14 +786,14 @@ _apply_be_on_open_positions() :
 → médian = (4075+4080)/2 = 4077.5
 → #300 SL @4077.5, #301 SL @4077.5
 → target_gain = 15 &times; 2 = 30$
-===== | CH2-C2 | BE | =====
+===== | CH2-C2-S2 | BE | =====
 SELL XAUUSD | SL @4077.5 | 2 POS
 
 <span class="cyan">Étape 5 — Prix descend à 4062 :</span>
 P&amp;L #300 = (4075-4062)&times;0.10 = +13.00$
 P&amp;L #301 = (4080-4062)&times;0.10 = +18.00$
 Total = 31.00$ &ge; 30$ → Gain fixe atteint
-===== | CH2-C2 | TP-FIXED | =====
+===== | CH2-C2-S2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +31.00$ | 2 POS
 #300, #301</div>
 
@@ -954,11 +954,11 @@ tp_trigger = tps[2] <span class="muted">(3ème TP)</span>
 <span class="muted">Prix descend à 4066 → TP_TRIGGER atteint</span>
 
 <span class="cyan">Résultat :</span>
-===== | CH2-C2 | TP_TRIGGER | =====
+===== | CH2-C2-S2 | TP_TRIGGER | =====
 SELL XAUUSD | @4080.0 | 1 ordres annulés</div>
 
 <h3>7.3 Log TP_TRIGGER</h3>
-<div class="log-box"><span class="header">2026-07-02 08:19:12,954 [INFO]</span> <span class="cyan">===== | CH2-C2 | TP_TRIGGER | =====</span>
+<div class="log-box"><span class="header">2026-07-02 08:19:12,954 [INFO]</span> <span class="cyan">===== | CH2-C2-S2 | TP_TRIGGER | =====</span>
 <span class="header">2026-07-02 08:19:12,954 [INFO]</span> <span class="info">SELL XAUUSD | @4080.0 | 1 ordres annulés</span></div>
 </section>
 
@@ -1007,7 +1007,7 @@ Ordres annulés : 3
 <span class="header">[INFO]</span> <span class="info">SELL XAUUSD | Entrée: 4060.0 | TPf: 4035.0 SL: 4075.0</span></div>
 
 <h4>Zone</h4>
-<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2 | =====</span>
+<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2-S1 | =====</span>
 <span class="header">[INFO]</span> <span class="info">SELL XAUUSD | Zone: 4075.0-4080.0 | TPf: 4054.0 SL: 4090.0</span></div>
 
 <h4>Quick Alert</h4>
@@ -1027,14 +1027,14 @@ Ordres annulés : 3
 <span class="header">[INFO]</span> <span class="green">  MKT #100 @4077.0 lot0.01 | LIMIT_1 #101 @4082.5 lot0.01</span></div>
 
 <h4>CAS 2-b (2 LIMITS)</h4>
-<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2 | =====</span>
+<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2-S2 | =====</span>
 <span class="header">[INFO]</span> <span class="info">SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4060.0 | TPf: 4054.0 SL: 4090.0</span>
 <span class="header">[INFO]</span> <span class="green">  LIMIT_1 #300 @4075.0 lot0.01 | LIMIT_2 #301 @4080.0 lot0.01</span></div>
 
 <h3>9.3 Événements</h3>
 
 <h4>Limit remplie</h4>
-<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2 | LIMIT | =====</span>
+<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2-S2 | LIMIT | =====</span>
 <span class="header">[INFO]</span> <span class="info">SELL XAUUSD | #1466553988 @4075.0 lot0.01</span></div>
 
 <h4>BE activé</h4>
@@ -1042,7 +1042,7 @@ Ordres annulés : 3
 <span class="header">[INFO]</span> <span class="green">SELL XAUUSD | SL @4061.11 | 1 POS</span></div>
 
 <h4>Gain fixe atteint</h4>
-<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2 | TP-FIXED | =====</span>
+<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2-S2 | TP-FIXED | =====</span>
 <span class="header">[INFO]</span> <span class="purple">SELL XAUUSD | P&amp;L: +30.00$ | 2 POS</span>
 <span class="header">[INFO]</span> <span class="purple">#300, #301</span></div>
 
@@ -1051,11 +1051,11 @@ Ordres annulés : 3
 <span class="header">[INFO]</span> <span class="green">SELL XAUUSD | P&amp;L: +15.00$ | 1/1 #1466078185</span></div>
 
 <h4>EXPIRATION</h4>
-<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2 | EXPIRATION | =====</span>
+<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2-S2 | EXPIRATION | =====</span>
 <span class="header">[INFO]</span> <span class="orange">SELL XAUUSD | @4075.0, @4080.0 | 2 ordres annulés</span></div>
 
 <h4>TP_TRIGGER</h4>
-<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2 | TP_TRIGGER | =====</span>
+<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2-S2 | TP_TRIGGER | =====</span>
 <span class="header">[INFO]</span> <span class="orange">SELL XAUUSD | @4075.0, @4080.0 | 2 ordres annulés</span></div>
 
 <h4>DAILY-LIMIT</h4>
@@ -1208,7 +1208,8 @@ Ordres annulés : 3
 <table>
 <tr><th>Format</th><th>Signification</th></tr>
 <tr><td><code>CH1-C1</code></td><td>Canal 1, CAS 1 (dans zone)</td></tr>
-<tr><td><code>CH2-C2</code></td><td>Canal 2, CAS 2 (hors zone)</td></tr>
+<tr><td><code>CH2-C2-S1</code></td><td>Canal 2, CAS 2-a (prix entre zone et TP1)</td></tr>
+<tr><td><code>CH2-C2-S2</code></td><td>Canal 2, CAS 2-b (prix entre TP1 et TP2)</td></tr>
 <tr><td><code>CH1-PU-S1</code></td><td>Canal 1, Prix Unique, Scénario 1 (MARKET)</td></tr>
 <tr><td><code>CH1-PU-S2</code></td><td>Canal 1, Prix Unique, Scénario 2 (LIMIT)</td></tr>
 <tr><td><code>CH1-AL</code></td><td>Canal 1, Alerte rapide</td></tr>
@@ -1310,7 +1311,7 @@ Ordres annulés : 3
   → Alerte Telegram avec ancien/nouveau objectif</div>
 
 <h3>Log BE LATE</h3>
-<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2 | BE | =====</span>
+<div class="log-box"><span class="header">[INFO]</span> <span class="cyan">===== | CH2-C2-S1 | BE | =====</span>
 <span class="header">[INFO]</span> <span class="green">SELL XAUUSD | SL @4079.5 | LATE LIMIT PROTÉGÉ</span></div>
 
 <h3>Alerte Telegram BE LATE</h3>

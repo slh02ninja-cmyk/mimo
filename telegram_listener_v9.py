@@ -1809,6 +1809,7 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
                 between_tp1_tp2 = tp2 < current < tp1
 
         if between_zone_tp1:
+            mt5_comment = f"CH{ch_num}-C2-S1"
             lot_per_order = max(round(LOT_SIZE / 2, 2), sym_info.volume_min)
             other_limit = zone_low if action == "BUY" else zone_high
             log.debug(f"CAS 2-a → Prix entre zone et TP1 ({zone_low}-{zone_high} ↔ {tp1}) | prix={current}")
@@ -1871,6 +1872,7 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
             send_alert_sync("\n".join(alert_lines))
 
         elif between_tp1_tp2:
+            mt5_comment = f"CH{ch_num}-C2-S2"
             lot_per_order = max(round(LOT_SIZE / 2, 2), sym_info.volume_min)
             if action == "BUY":
                 price_1 = zone_high

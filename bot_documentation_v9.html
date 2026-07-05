@@ -70,6 +70,7 @@ footer{text-align:center;color:var(--text-muted);font-size:0.8rem;padding:2rem 0
 <li><a href="#parser">Signal Parser V7.4.14</a></li>
 <li><a href="#signals">Formats de signaux acceptés</a></li>
 <li><a href="#execution">Cas d'exécution des ordres</a></li>
+<li><a href="#quick-alert-exec">Quick Alert + Fusion (§4.6-4.7)</a></li>
 <li><a href="#be-tpfixed">Gestion BE + Gain fixe</a></li>
 <li><a href="#quick-alert">Quick Alert + Fusion</a></li>
 <li><a href="#tp-trigger">TP_TRIGGER</a></li>
@@ -300,6 +301,104 @@ SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4070.0 | TPf: 4054.0 SL: 4090.0
 </table>
 
 <div class="highlight warn"><strong>Note CAS 2-a :</strong> Nécessite au moins 2 TPs avec tp1 proche de la zone. Si le signal n'a qu'un seul TP (tp1 loin de la zone), le prix sera toujours "hors zone" et le signal sera annulé.</div>
+
+<h3>4.6 Quick Alert — Exécution</h3>
+<p>Un Quick Alert est un signal sans TP ni SL (ex: <code>BUY 4512</code>). Le bot génère automatiquement SL et TP, puis exécute selon la position du prix.</p>
+
+<div class="flow"><span class="cyan">Quick Alert reçue :</span> BUY 4512
+ &darr;
+<span class="muted">Génération auto :</span> SL = entry &minus; 10 = 4502, TP = entry + 15 = 4527
+ &darr;
+<span class="green">Prix entre SL et entry ?</span> (zone market)
+ &#x251c;&#x2500; <span class="green">OUI</span> &rarr; <span class="badge badge-green">MARKET</span> @ prix actuel, rôle=quick_market
+ &#x2514;&#x2500; <span class="red">NON</span>
+     &darr;
+     <span class="green">Prix entre entry et entry+3 ?</span> (zone limit)
+      &#x251c;&#x2500; <span class="green">OUI</span> &rarr; <span class="badge badge-orange">LIMIT</span> @ entry, rôle=quick_limit
+      &#x2514;&#x2500; <span class="red">NON</span> &rarr; <span class="badge badge-red">IGNORé</span></div>
+
+<h4>Zones d'exécution Quick Alert</h4>
+<table>
+<tr><th>Direction</th><th>Zone MARKET</th><th>Zone LIMIT</th><th>Hors zone</th></tr>
+<tr><td>BUY</td><td><code>SL &le; current &le; entry</code></td><td><code>entry &lt; current &le; entry+3</code></td><td>IGNORé</td></tr>
+<tr><td>SELL</td><td><code>entry &le; current &le; SL</code></td><td><code>entry-3 &le; current &lt; entry</code></td><td>IGNORé</td></tr>
+</table>
+
+<h4>Exemple Quick Alert MARKET</h4>
+<div class="signal-box"><span class="muted">Signal :</span> Quick Alert BUY 4512
+<span class="muted">Prix actuel :</span> 4510 (entre SL=4502 et entry=4512)
+
+<span class="cyan">Résultat :</span>
+===== | CH6-QA | =====
+BUY XAUUSD | Entrée: 4512.0 | TPf: 4527.0 SL: 4502.0
+  MKT #400 @4510.0 lot0.01</div>
+
+<h4>Exemple Quick Alert LIMIT</h4>
+<div class="signal-box"><span class="muted">Signal :</span> Quick Alert SELL 4060
+<span class="muted">Prix actuel :</span> 4062 (entre entry=4060 et entry+3=4063, mais SELL → zone limit = entry-3=4057 ≤ current &lt; entry=4060)
+<span class="muted">Prix actuel :</span> 4058 (entre 4057 et 4060)
+
+<span class="cyan">Résultat :</span>
+===== | CH6-QA | =====
+SELL XAUUSD | Entrée: 4060.0 | TPf: 4045.0 SL: 4070.0
+  LIMIT #401 @4060.0 lot0.01</div>
+
+<h3>4.7 Fusion — Quick Alert + Signal complet</h3>
+<p>Quand un signal complet arrive après un Quick Alert, le bot fusionne les deux si l'entry du QA est dans la zone du signal complet (±2 points).</p>
+
+<div class="flow"><span class="cyan">Quick Alert existant :</span> BUY 4511 (position ouverte ou pending)
+<span class="cyan">Signal complet reçu :</span> BUY zone 4510-4515, TP1=4520, TP2=4525, TPf=4530
+ &darr;
+<span class="green">entry QA (4511) dans [zone_low-2, zone_high+2] ?</span>
+ &#x251c;&#x2500; <span class="green">OUI</span> &rarr; <span class="badge badge-purple">FUSION</span>
+ &#x2514;&#x2500; <span class="red">NON</span> &rarr; exécuter signal complet normalement
+
+<span class="cyan">Fusion — Scénarios :</span>
+
+<span class="green">1. QA position ouverte (market) :</span>
+  → Modifier SL/TP sur la position (provisoire → réel)
+  → Placer LIMIT @ zone_edge (merge_limit)
+
+<span class="orange">2. QA pending (limit) :</span>
+  → Modifier SL/TP sur l'ordre pending
+  → Placer LIMIT @ zone_edge (merge_limit)
+
+<span class="green">3. QA limit déjà rempli :</span>
+  → Créer ticket avec rôle "quick_limit_filled"
+  → Modifier SL/TP sur la position
+  → Placer LIMIT @ zone_edge (merge_limit)
+
+<span class="red">4. QA SL/TP touché :</span>
+  → Ignorer le signal complet
+
+<span class="red">5. QA expiré/annulé :</span>
+  → Exécuter le signal complet normalement</div>
+
+<h4>Exemple Fusion complète</h4>
+<div class="signal-box"><span class="muted">Quick Alert :</span> BUY 4512 → MARKET #400 @4511 (quick_market)
+<span class="muted">Signal complet :</span> BUY zone 4510-4515, TP1=4520, TP2=4525, TPf=4530, SL=4500
+<span class="muted">Prix actuel :</span> 4511 (dans la zone)
+
+<span class="cyan">Étape 1 — Fusion :</span>
+entry QA (4511) ∈ [4510-4515] → FUSION
+→ Position #400 ouverte → modifier SL=4500, TP=4530
+→ Placer LIMIT @ zone_low=4510 (merge_limit)
+
+<span class="cyan">Étape 2 — Limit remplit :</span>
+#401 @4510 (merge_limit) → ticket ajouté
+
+<span class="cyan">Résultat :</span>
+===== | CH6-QA-F | =====
+BUY XAUUSD | Zone: 4510.0-4515.0 | TPf: 4530.0 SL: 4500.0
+  MKT #400 @4511.0 lot0.01 | LIMIT #401 @4510.0 lot0.01</div>
+
+<h4>Commentaires MT5 Fusion</h4>
+<table>
+<tr><th>Commentaire</th><th>Signification</th></tr>
+<tr><td><code>CH{num}-AL</code></td><td>Quick Alert (market ou limit)</td></tr>
+<tr><td><code>CH{num}-MG</code></td><td>Merge limit (fusion QA + signal complet)</td></tr>
+<tr><td><code>CH{num}-QA-F</code></td><td>Quick Alert + Fusion (log)</td></tr>
+</table>
 </section>
 
 <!-- ============================================================ -->

@@ -291,6 +291,8 @@ SELL XAUUSD | Zone: 4075.0-4080.0 | Prix: 4070.0 | TPf: 4054.0 SL: 4090.0
 <tr><td><span class="badge badge-orange">CAS 2-b</span></td><td><code>tp2 &lt; current &lt; tp1</code></td><td><code>tp1 &lt; current &lt; tp2</code></td><td>2 &times; LIMIT</td></tr>
 <tr><td><span class="badge badge-red">Hors zone</span></td><td><code>current &lt; tp2</code> ou <code>current &gt; zone_high</code></td><td><code>current &gt; tp2</code> ou <code>current &lt; zone_low</code></td><td>ANNULé</td></tr>
 </table>
+
+<div class="highlight warn"><strong>Note CAS 2-a :</strong> Nécessite au moins 2 TPs avec tp1 proche de la zone. Si le signal n'a qu'un seul TP (tp1 loin de la zone), le prix sera toujours "hors zone" et le signal sera annulé.</div>
 </section>
 
 <!-- ============================================================ -->
@@ -495,85 +497,85 @@ SELL XAUUSD | P&amp;L: +31.00$ | 2 POS
 #100, #201</div>
 
 <h4>5.4.5 CAS 2-a — Scénario A (limit non rempli)</h4>
-<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
-<span class="muted">Prix actuel : 4082 (au-dessus de la zone)</span>
+<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TP1=4072, TP2=4069, TPf=4054, SL=4090
+<span class="muted">Prix actuel : 4073 (entre tp1=4072 et zone_low=4075)</span>
 <span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
-execute_signal() → prix 4082 &gt; zone_high(4080) → CAS 2
-→ tp1(4054) &lt; current(4082) &lt; zone_low(4075)? Non
-→ zone_high(4080) &lt; current(4082) &lt; tp1(4054)? Non (4082 &gt; 4054 pour SELL)
-→ CAS 2-a : prix entre zone et TP1
-→ MARKET SELL #100 @4082 lot=0.01 (market_cas2)
+execute_signal() → prix 4073 &lt; zone_low(4075) → CAS 2
+→ all_tps = [4072, 4069, 4054] (décroissant)
+→ tp1 = 4072
+→ CAS 2-a SELL : tp1(4072) &lt; current(4073) &lt; zone_low(4075) → OUI
+→ MARKET SELL #100 @4073 lot=0.01 (market_cas2)
 → SELL LIMIT #200 @4077 lot=0.01 (limit_cas2)
-entry["tickets"] = [{#100, market_cas2, entry=4082, be_active=False}]
+entry["tickets"] = [{#100, market_cas2, entry=4073, be_active=False}]
 entry["orders"] = [{#200, limit_cas2, price=4077}]
 
-<span class="cyan">Étape 2 — Prix descend directement à 4074 :</span>
-Phase 1: _resolve_order(#200) → pas rempli
+<span class="cyan">Étape 2 — Prix descend directement à 4065 :</span>
+Phase 1: _resolve_order(#200) → pas rempli (prix descend sans toucher 4077)
 Phase 3: _check_pnl_trigger()
-→ #100 profit = (4082-4074)&times;0.10 = +8.00$ &ge; PNL_TRIGGER → True
+→ #100 profit = (4073-4065)&times;0.10 = +8.00$ &ge; PNL_TRIGGER → True
 
 _apply_be_on_open_positions() :
 → _cancel_pending_orders_for_entry() → #200 annulé
-→ open_count = 1 → SL @ entry = 4082
+→ open_count = 1 → SL @ entry = 4073
 → target_gain = 15 &times; 1 = 15$
 ===== | CH2-C2 | BE | =====
-SELL XAUUSD | SL @4082.0 | 1 POS
+SELL XAUUSD | SL @4073.0 | 1 POS
 
-<span class="cyan">Étape 3 — Prix descend à 4067 :</span>
-P&amp;L #100 = (4082-4067)&times;0.10 = +15.00$ &ge; target_gain
+<span class="cyan">Étape 3 — Prix descend à 4058 :</span>
+P&amp;L #100 = (4073-4058)&times;0.10 = +15.00$ &ge; target_gain
 → Gain fixe atteint
 ===== | CH2-C2 | TP-FIXED | =====
 SELL XAUUSD | P&amp;L: +15.00$ | 1 POS
 #100</div>
 
 <h4>5.4.6 CAS 2-a — Scénario B (limit rempli)</h4>
-<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TPf=4054, SL=4090
-<span class="muted">Prix actuel : 4082 (au-dessus de la zone)</span>
+<div class="signal-box"><span class="muted">Signal :</span> SELL zone 4075-4080, TP1=4072, TP2=4069, TPf=4054, SL=4090
+<span class="muted">Prix actuel : 4073 (entre tp1=4072 et zone_low=4075)</span>
 <span class="muted">Lot : 0.01 | PNL_TRIGGER : 8$ | TP_FIXED_GAIN_USD : 15$</span>
 
 <span class="cyan">Étape 1 — Exécution :</span>
-execute_signal() → prix 4082 → CAS 2-a
-→ MARKET SELL #100 @4082 lot=0.01 (market_cas2)
+execute_signal() → CAS 2-a
+→ MARKET SELL #100 @4073 lot=0.01 (market_cas2)
 → SELL LIMIT #200 @4077 lot=0.01 (limit_cas2)
-entry["tickets"] = [{#100, market_cas2, entry=4082, be_active=False}]
+entry["tickets"] = [{#100, market_cas2, entry=4073, be_active=False}]
 entry["orders"] = [{#200, limit_cas2, price=4077}]
 
-<span class="cyan">Étape 2 — Prix descend à 4077 → limit remplit :</span>
+<span class="cyan">Étape 2 — Prix remonte à 4077 → limit remplit :</span>
 Phase 1: _resolve_order(#200) → rempli → position #201
 entry["tickets"] = [
-  {#100, market_cas2, entry=4082, be_active=False},
+  {#100, market_cas2, entry=4073, be_active=False},
   {#201, limit_cas2, entry=4077, be_active=False}
 ]
 entry["orders"] = []
 
-<span class="cyan">Étape 3 — Prix descend à 4070 :</span>
+<span class="cyan">Étape 3 — Prix descend à 4068 :</span>
 Phase 3: _check_pnl_trigger()
-→ #100 profit = (4082-4070)&times;0.10 = +12.00$
-→ #201 profit = (4077-4070)&times;0.10 = +7.00$
-→ min_profit = min(12$, 7$) = 7$ &lt; 8$ → False
-→ BE pas encore (limit est la pire position ici)
+→ #100 profit = (4073-4068)&times;0.10 = +5.00$
+→ #201 profit = (4077-4068)&times;0.10 = +9.00$
+→ min_profit = min(5$, 9$) = 5$ &lt; 8$ → False
+→ BE pas encore (market est la pire position ici)
 
-<span class="cyan">Étape 4 — Prix descend à 4069 :</span>
-→ #100 profit = (4082-4069)&times;0.10 = +13.00$
-→ #201 profit = (4077-4069)&times;0.10 = +8.00$
+<span class="cyan">Étape 4 — Prix descend à 4065 :</span>
+→ #100 profit = (4073-4065)&times;0.10 = +8.00$
+→ #201 profit = (4077-4065)&times;0.10 = +12.00$
 → min_profit = 8$ &ge; PNL_TRIGGER → True
 
 _apply_be_on_open_positions() :
 → open_count = 2 → SL au médian
-→ médian = (4082+4077)/2 = 4079.5
-→ #100 SL @4079.5, #201 SL @4079.5
+→ médian = (4073+4077)/2 = 4075
+→ #100 SL @4075, #201 SL @4075
 → target_gain = 15 &times; 2 = 30$
 ===== | CH2-C2 | BE | =====
-SELL XAUUSD | SL @4079.5 | 2 POS
+SELL XAUUSD | SL @4075.0 | 2 POS
 
-<span class="cyan">Étape 5 — Prix descend à 4063 :</span>
-P&amp;L #100 = (4082-4063)&times;0.10 = +19.00$
-P&amp;L #201 = (4077-4063)&times;0.10 = +14.00$
-Total = 33.00$ &ge; 30$ → Gain fixe atteint
+<span class="cyan">Étape 5 — Prix descend à 4060 :</span>
+P&amp;L #100 = (4073-4060)&times;0.10 = +13.00$
+P&amp;L #201 = (4077-4060)&times;0.10 = +17.00$
+Total = 30.00$ &ge; 30$ → Gain fixe atteint
 ===== | CH2-C2 | TP-FIXED | =====
-SELL XAUUSD | P&amp;L: +33.00$ | 2 POS
+SELL XAUUSD | P&amp;L: +30.00$ | 2 POS
 #100, #201</div>
 
 <h4>5.4.7 CAS 2-b — Scénario A (aucune limit rempli, TP_TRIGGER)</h4>

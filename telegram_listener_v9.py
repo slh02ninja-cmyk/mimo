@@ -2093,20 +2093,18 @@ def execute_quick_alert(signal: dict, bridge: MT5Bridge, manager: TradeManager,
             else:
                 log.debug("Quick Alert existante introuvable → nouvelle alerte")
 
-    # Log standard pour Quick Alert
-    mt5_comment_qa = f"CH{ch_num}-QA"
-    log.info(f"===== | {mt5_comment_qa} | =====")
-    log.info(f"{action} {symbol} | Entrée: {entry_price} | TPf: {default_tp} SL: {sl}")
-
     orders = []
     tickets = []
     order_ticket = None
     is_limit_order = False
 
     if in_market_zone:
+        mt5_comment_qa = f"CH{ch_num}-AL-MKT"
+        log.info(f"===== | {mt5_comment_qa} | =====")
+        log.info(f"{action} {symbol} | Entrée: {entry_price} | Prix: {current} | TPf: {default_tp} SL: {sl}")
         log.debug(f"Quick Alert MARKET {action} {symbol} @{current} SL={sl}, TP={default_tp}")
         try:
-            t = bridge.place_market_order(signal, LOT_UNIQUE_TRADE, tp=default_tp, sl=sl, comment=f"CH{ch_num}-AL")
+            t = bridge.place_market_order(signal, LOT_UNIQUE_TRADE, tp=default_tp, sl=sl, comment=mt5_comment_qa)
         except Exception as e:
             log.error(f"Quick alert MARKET exception: {e}")
             t = None
@@ -2140,9 +2138,12 @@ def execute_quick_alert(signal: dict, bridge: MT5Bridge, manager: TradeManager,
             log.error("✗ QUICK MARKET échoué")
             return
     else:
+        mt5_comment_qa = f"CH{ch_num}-AL-LMT"
+        log.info(f"===== | {mt5_comment_qa} | =====")
+        log.info(f"{action} {symbol} | Entrée: {entry_price} | Prix: {current} | TPf: {default_tp} SL: {sl}")
         log.debug(f"Quick Alert LIMIT {action} {symbol} @{entry_price} SL={sl}, TP={default_tp}")
         try:
-            o = bridge.place_limit_order(signal, LOT_UNIQUE_TRADE, entry_price, default_tp, expiry, comment=f"CH{ch_num}-AL")
+            o = bridge.place_limit_order(signal, LOT_UNIQUE_TRADE, entry_price, default_tp, expiry, comment=mt5_comment_qa)
         except Exception as e:
             log.error(f"Quick alert LIMIT exception: {e}")
             o = None
@@ -2184,7 +2185,7 @@ def execute_quick_alert(signal: dict, bridge: MT5Bridge, manager: TradeManager,
         "_is_quick_alert": True,
         "_signal_id": f"{symbol}_{action}_{int(time.time())}_QA",
         "_expected_positions": 1,
-        "_mt5_comment": f"CH{ch_num}-AL",
+        "_mt5_comment": mt5_comment_qa,
     }
     manager.register(entry)
 
@@ -2500,7 +2501,7 @@ async def main():
                 ch_num = CHANNEL_NUM_MAP.get(canal_name, CHANNEL_NUM_MAP.get(canal_name.lstrip("-"), "?"))
 
                 if signal_data.is_quick_alert:
-                    mode = "QA"
+                    mode = "AL"
                 elif signal_data.is_single_price:
                     mode = "PU"
                 else:

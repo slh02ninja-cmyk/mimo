@@ -1612,15 +1612,16 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
         sl_price = sl
         scenario = None
 
+        # Scénarios selon documentation v9 :
+        # S1: SL < prix < entry → MARKET
+        # S2: entry < prix < TP1 → LIMIT (BUY) | TP1 < prix < entry → LIMIT (SELL)
+        # S3: sinon → ANNULÉ
         if action == "BUY":
             scenario_1 = sl_price < current < entry_price
             scenario_2 = entry_price < current < tp1
         else:
             scenario_1 = entry_price < current < sl_price
             scenario_2 = tp1 < current < entry_price
-
-        if len(all_tps) == 1:
-            scenario_2 = False
 
         if scenario_1:
             scenario = 1
@@ -1629,11 +1630,12 @@ def execute_signal(signal: dict, bridge: MT5Bridge, manager, tracker):
         else:
             scenario = 3
 
-        if scenario == 3:
-            log.debug(f"PRIX UNIQUE — Scénario 3 : prix={current} hors conditions → ANNULÉ")
-            return
-
         mt5_comment_pu = f"CH{ch_num}-PU-S{scenario}"
+
+        if scenario == 3:
+            log.info(f"===== | {mt5_comment_pu} | ANNULÉ | =====")
+            log.info(f"{action} {signal['symbol']} | prix={current} hors zone S2 | entry={entry_price} TP1={tp1} SL={sl_price}")
+            return
         log.debug(f"PRIX UNIQUE — Scénario {scenario} | entry={entry_price} TP1={tp1} prix={current}")
 
         unique_lot = LOT_UNIQUE_TRADE
@@ -2489,7 +2491,7 @@ async def main():
 
             signal_data.source_channel = canal_name
 
-            # Log du signal parsé au format standard (identique à execute_signal)
+            # Log du signal reçu (sans scénario — le vrai scénario est loggé par execute_signal)
             if signal_data.signal_type == "TRADE":
                 action = signal_data.direction or "?"
                 symbol = signal_data.pair or "?"
@@ -2500,20 +2502,12 @@ async def main():
                 if signal_data.is_quick_alert:
                     mode = "QA"
                 elif signal_data.is_single_price:
-                    mode = "PU-S1"
+                    mode = "PU"
                 else:
-                    mode = "C2"  # zone par défaut
+                    mode = "C"
 
                 mt5_comment = f"CH{ch_num}-{mode}"
-                log.info(f"===== | {mt5_comment} | =====")
-
-                if signal_data.is_single_price:
-                    entry = signal_data.zone_mid or 0
-                    log.info(f"{action} {symbol} | Entrée: {entry} | TPf: {tp_final} SL: {sl}")
-                else:
-                    zone_low = signal_data.zone_low or 0
-                    zone_high = signal_data.zone_high or 0
-                    log.info(f"{action} {symbol} | Zone: {zone_low}-{zone_high} | TPf: {tp_final} SL: {sl}")
+                log.info(f">>>>> SIGNAL | {mt5_comment} | {action} {symbol} | TPf: {tp_final} SL: {sl}")
 
             if signal_data.signal_type == "CLOSE":
                 canal = canal_name

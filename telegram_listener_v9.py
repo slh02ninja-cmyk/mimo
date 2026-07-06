@@ -92,7 +92,6 @@ MAX_SPREAD_POINTS = float(os.getenv("MAX_SPREAD_POINTS", "50"))
 TP_FIXED_ENABLED = os.getenv("TP_FIXED_ENABLED", "true").lower() == "true"
 TP_FIXED_GAIN_USD = float(os.getenv("TP_FIXED_GAIN_USD", "15.0"))
 PNL_TRIGGER_USD = float(os.getenv("PNL_TRIGGER_USD", "8.0"))
-BE_TP_TRIGGER_PCT = float(os.getenv("BE_TP_TRIGGER_PCT", "0.5"))  # 50% du chemin vers TP1
 
 # === FILTRES ===
 TIME_FILTER_ENABLED = os.getenv("TIME_FILTER_ENABLED", "true").lower() == "true"
@@ -1002,34 +1001,6 @@ class TradeManager:
                     min_role = t.get("role", "?")
         if has_active and min_profit >= PNL_TRIGGER_USD:
             return True
-
-        # ★★★ FIX : Déclenchement basé sur la distance au TP si PnL insuffisant ★★★
-        # Utile pour les petits lots où le PnL met trop longtemps à atteindre le seuil
-        for t in entry.get("tickets", []):
-            if t.get("be_active") or t.get("role") not in self._be_allowed_roles:
-                continue
-            pos = self._get_pos(t["ticket"])
-            if not pos:
-                continue
-            signal = entry.get("signal", {})
-            action = signal.get("action", "")
-            entry_price = t.get("entry_price", 0)
-            tps = signal.get("tps", [])
-            if not tps or entry_price == 0:
-                continue
-            tp1 = tps[0]
-            sym = mt5.symbol_info(pos.symbol)
-            if sym is None:
-                continue
-            tick = mt5.symbol_info_tick(sym.name)
-            if tick is None:
-                continue
-            current = tick.bid if action == "BUY" else tick.ask
-            tp_distance = abs(tp1 - entry_price)
-            price_distance = abs(current - entry_price)
-            if tp_distance > 0 and (price_distance / tp_distance) >= BE_TP_TRIGGER_PCT:
-                log.debug(f"[BE] Déclenchement distance : {price_distance:.2f}/{tp_distance:.2f} = {price_distance/tp_distance*100:.0f}% >= {BE_TP_TRIGGER_PCT*100:.0f}%")
-                return True
 
         # ✅ LOG DEBUG : pourquoi le BE ne se déclenche pas
         if has_active and min_profit < float('inf'):
@@ -2576,7 +2547,7 @@ async def main():
                 log.info(f"  {env_name} : {ch_value}")
         log.info(f" Lot total : {LOT_SIZE} | Lot unique : {LOT_UNIQUE_TRADE}")
         log.info(f" Gain fixe par position : {TP_FIXED_GAIN_USD}$")
-        log.info(f" BE déclenché à : {PNL_TRIGGER_USD}$ ou {BE_TP_TRIGGER_PCT*100:.0f}% du TP1")
+        log.info(f" BE déclenché à : {PNL_TRIGGER_USD}$")
         log.info(f" Objectif quotidien : {DAILY_PROFIT_LIMIT}$")
 
         log.info(f" Heartbeat : {HEARTBEAT_INTERVAL_MIN} min")
